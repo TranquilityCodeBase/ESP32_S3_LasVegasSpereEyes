@@ -11,6 +11,7 @@ extern "C" {
 
 esp_err_t boardDisplayInit(void);               // I2C + expander, ST7701S init over SPI, RGB panel, backlight
 uint16_t *boardDisplayBackBuffer(void);         // Frame buffer not on screen. Draw here, then flip
+uint16_t *boardDisplayFrontBuffer(void);        // Frame buffer on screen now (read only, for debugging)
 void boardDisplayFlip(void);                    // Show the back buffer. Returns once the old front buffer is free
 i2c_master_bus_handle_t boardI2cBus(void);      // Shared I2C bus (touch, IMU, RTC) for later drivers
 

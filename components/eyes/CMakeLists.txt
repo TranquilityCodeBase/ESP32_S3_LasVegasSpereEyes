@@ -5,5 +5,5 @@ idf_component_register(
          "gaze/gaze_idle.c"
     INCLUDE_DIRS "include"
     REQUIRES esp_common
-    PRIV_REQUIRES esp_hw_support esp_timer heap log
+    PRIV_REQUIRES esp_hw_support esp_timer heap log freertos
 )

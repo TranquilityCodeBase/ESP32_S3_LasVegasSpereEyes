@@ -36,6 +36,8 @@ typedef struct eye_style {
     int (*layout)(const face_state_t *face, eye_pose_t *poses, int maxPoses);   // Place the eyes, returns count
     eye_rect_t (*bounds)(const eye_pose_t *pose);                               // Screen area one eye can touch
     void (*drawEye)(eye_canvas_t *cv, const eye_pose_t *pose);                  // Draw one eye into the canvas
+    eye_rect_t (*detailBounds)(const eye_pose_t *pose);   // Optional: area of the pupil and glints, so a pupil-only
+                                                          // change redraws just that. NULL = always redraw the whole eye
 } eye_style_t;
 
 // Built-in styles (styles/*.c)

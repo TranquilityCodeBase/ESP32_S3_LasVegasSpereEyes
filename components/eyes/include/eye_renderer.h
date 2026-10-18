@@ -19,7 +19,7 @@ typedef struct {
 esp_err_t eyeRendererInit(const eye_display_t *display, const eye_style_t *style);    // Renders the background once
 void eyeRendererSetStyle(const eye_style_t *style);                                   // Swap style (redraws everything)
 void eyeRendererDraw(const face_state_t *face);                                       // Draw one frame and flip
-void eyeRendererStats(uint32_t *drawUs, uint32_t *flipUs);                            // Average draw and flip time since last call
+void eyeRendererStats(uint32_t *drawUs, uint32_t *flipUs, uint32_t *drawMaxUs);       // Average draw and flip time, slowest draw, since last call
 
 #ifdef __cplusplus
 }

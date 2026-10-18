@@ -47,6 +47,16 @@ static int pickBlinkIndex(void) {
     return 0;
 }
 
+// Advance a critically damped spring by dt using its closed-form solution.
+// (A simple Euler step blows up once dt > 1 / omega, about 36 ms, which a slow frame can hit.)
+static void springStep(float *pos, float *vel, float target, float dt) {
+    float err = *pos - target;                                      // Distance from the target
+    float decay = expf(-GAZE_OMEGA * dt);
+    float tmp = (*vel + GAZE_OMEGA * err) * dt;
+    *pos = target + (err + tmp) * decay;
+    *vel = (*vel - GAZE_OMEGA * tmp) * decay;
+}
+
 static void beginBlink(int index, uint32_t nowMs) {
     if (index < 0 || index >= blinkEffectCount) return;
     blink = blinkEffectTable[index];
@@ -108,12 +118,9 @@ void eyeAnimatorUpdate(uint32_t nowMs, face_state_t *out) {
         lastTarget = target;
     }
 
-    // Critically damped spring toward the target
-    float k = GAZE_OMEGA * GAZE_OMEGA, c = 2.0f * GAZE_OMEGA;
-    velX += (k * (lastTarget.x - posX) - c * velX) * dt;
-    velY += (k * (lastTarget.y - posY) - c * velY) * dt;
-    posX += velX * dt;
-    posY += velY * dt;
+    // Critically damped spring toward the target, exact solution: stable at any frame time
+    springStep(&posX, &velX, lastTarget.x, dt);
+    springStep(&posY, &velY, lastTarget.y, dt);
 
     // Blinks
     if (pendingBlink >= 0) {
@@ -136,8 +143,8 @@ void eyeAnimatorUpdate(uint32_t nowMs, face_state_t *out) {
         pupil += 0.10f * (2.0f - lastTarget.distanceM) / 2.0f;
     }
 
-    out->gazeX = posX;
-    out->gazeY = posY;
+    out->gazeX = fmaxf(-1.0f, fminf(1.0f, posX));                   // Never past the edge of the range
+    out->gazeY = fmaxf(-1.0f, fminf(1.0f, posY));
     out->openLeft = openL;
     out->openRight = openR;
     out->pupilScale = pupil;

@@ -53,6 +53,21 @@ static void syncStep(void) {
     }
 }
 
+#if APP_DEBUG_FRAME_DUMP
+// Debug: print the on-screen frame, downsampled, as hex over the console, plus the face state
+static void dumpFrame(const face_state_t *face) {
+    const int step = 6;                                                 // 480 / 6 = 80 x 80 samples
+    uint16_t *fb = boardDisplayFrontBuffer();
+    printf("FRAME %d %d gaze %.3f %.3f open %.2f %.2f\n", BOARD_LCD_H_RES / step, BOARD_LCD_V_RES / step,
+           face->gazeX, face->gazeY, face->openLeft, face->openRight);
+    for (int y = 0; y < BOARD_LCD_V_RES; y += step) {
+        for (int x = 0; x < BOARD_LCD_H_RES; x += step) printf("%04x", fb[y * BOARD_LCD_H_RES + x]);
+        printf("\n");
+    }
+    printf("ENDFRAME\n");
+}
+#endif
+
 static void renderTask(void *arg) {
     const TickType_t framePeriod = pdMS_TO_TICKS(1000 / APP_TARGET_FPS);
     TickType_t lastWake = xTaskGetTickCount();
@@ -64,12 +79,15 @@ static void renderTask(void *arg) {
         eyeAnimatorUpdate(nowMs(), &face);                              // Where to look, how open
         face.isLeftEye = APP_EYE_IS_LEFT;                               // Which eye of the pair this board draws
         eyeRendererDraw(&face);                                         // Draw and flip
+#if APP_DEBUG_FRAME_DUMP
+        if (frames % (APP_TARGET_FPS * 3) == 0) dumpFrame(&face);       // Every 3 s
+#endif
         if (++frames == APP_TARGET_FPS * 10) {                          // Frame rate in the log every 10 s
             uint32_t elapsed = nowMs() - fpsStartMs;
-            uint32_t drawUs, flipUs;
-            eyeRendererStats(&drawUs, &flipUs);
-            ESP_LOGI(TAG, "%.1f fps, draw %lu us, flip wait %lu us", frames * 1000.0f / elapsed,
-                     (unsigned long)drawUs, (unsigned long)flipUs);
+            uint32_t drawUs, flipUs, drawMaxUs;
+            eyeRendererStats(&drawUs, &flipUs, &drawMaxUs);
+            ESP_LOGI(TAG, "%.1f fps, draw %lu us (max %lu), flip wait %lu us", frames * 1000.0f / elapsed,
+                     (unsigned long)drawUs, (unsigned long)drawMaxUs, (unsigned long)flipUs);
             frames = 0;
             fpsStartMs = nowMs();
         }

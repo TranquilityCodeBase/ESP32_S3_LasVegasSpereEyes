@@ -12,6 +12,7 @@
 #define APP_TARGET_FPS          30          // Animation frame rate (panel refreshes at about 64 Hz)
 #define APP_RENDER_CORE         1           // CPU core for the render task (Wi-Fi runs on core 0)
 #define APP_RENDER_PRIORITY     5
+#define APP_DEBUG_FRAME_DUMP    0           // 1 = print the on-screen frame over the console every 3 s (debug only)
 
 // ---------- LD2450 radar (off until the radar is wired) ----------
 // Wire radar TX -> GPIO19 and radar RX -> GPIO20 on the 12-pin header, 5 V from USB_5V on the same header.

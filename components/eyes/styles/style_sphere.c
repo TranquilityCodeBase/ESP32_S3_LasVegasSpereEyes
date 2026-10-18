@@ -25,8 +25,8 @@
 #define PUPIL_K         0.35f       // Pupil radius
 #define SHADOW_DX_K     0.05f       // Drop shadow offset
 #define SHADOW_DY_K     0.10f
-#define SHADOW_SOFT_MAX 18.0f       // Soft edge limit in px (wider bands cost CPU)
-#define LID_SOFT_MAX    12.0f       // Soft edge of the lid shadow on the white
+#define SHADOW_SOFT_MAX 10.0f       // Soft edge limit in px (wider bands cost CPU)
+#define LID_SOFT_MAX    8.0f        // Soft edge of the lid shadow on the white
 
 // One eye per screen (each board is one eye of the face)
 #define EYE1_RX         128.0f      // Eye half width
@@ -98,10 +98,19 @@ static void placeEye(const face_state_t *face, eye_pose_t *p, float cx, float cy
     p->pupilDy = face->gazeY * (p->ry - pr - 0.12f * p->ry);
 }
 
+// Small gaze changes move only the pupil; the eye body starts sliding past this.
+// Keeps the eye still while resting, which also lets the renderer redraw just the pupil.
+static float deadZone(float g) {
+    const float dz = 0.08f;
+    if (g > dz) return (g - dz) / (1.0f - dz);
+    if (g < -dz) return (g + dz) / (1.0f - dz);
+    return 0.0f;
+}
+
 static int sphereEyeLayout(const face_state_t *face, eye_pose_t *poses, int maxPoses) {
     if (maxPoses < 1) return 0;
     poses[0].isLeft = face->isLeftEye;                                  // This board's eye
-    placeEye(face, &poses[0], SCREEN_C + face->gazeX * EYE1_SHIFT_X, SCREEN_C + face->gazeY * EYE1_SHIFT_Y,
+    placeEye(face, &poses[0], SCREEN_C + deadZone(face->gazeX) * EYE1_SHIFT_X, SCREEN_C + deadZone(face->gazeY) * EYE1_SHIFT_Y,
              EYE1_RX, EYE1_RY);
     return 1;
 }
@@ -133,6 +142,12 @@ static eye_rect_t sphereBounds(const eye_pose_t *pose) {
     if (o.x0 < r.x0) r.x0 = o.x0;
     if (o.y0 < r.y0) r.y0 = o.y0;
     return r;
+}
+
+static eye_rect_t sphereDetailBounds(const eye_pose_t *pose) {
+    float pr = PUPIL_K * pose->ry * pose->pupilScale;                   // Glints sit inside the pupil
+    eye_ellipse_t pupil = {pose->cx + pose->pupilDx, pose->cy + pose->pupilDy, pr, pr};
+    return canvasEllipseBounds(&pupil, 2.0f);
 }
 
 static void sphereDrawEye(eye_canvas_t *cv, const eye_pose_t *pose) {
@@ -174,6 +189,7 @@ const eye_style_t eyeStyleSphere = {
     .layout = sphereEyeLayout,
     .bounds = sphereBounds,
     .drawEye = sphereDrawEye,
+    .detailBounds = sphereDetailBounds,
 };
 
 const eye_style_t eyeStyleSphereFace = {
@@ -182,4 +198,5 @@ const eye_style_t eyeStyleSphereFace = {
     .layout = sphereFaceLayout,
     .bounds = sphereBounds,
     .drawEye = sphereDrawEye,
+    .detailBounds = sphereDetailBounds,
 };

@@ -188,6 +188,10 @@ uint16_t *boardDisplayBackBuffer(void) {
     return frameBuffers[backIndex];
 }
 
+uint16_t *boardDisplayFrontBuffer(void) {
+    return frameBuffers[backIndex ^ 1];
+}
+
 void boardDisplayFlip(void) {
     esp_lcd_panel_draw_bitmap(panel, 0, 0, BOARD_LCD_H_RES, BOARD_LCD_V_RES, frameBuffers[backIndex]);  // Queue the switch
     xSemaphoreTake(frameDoneSem, 0);                                   // Drop a signal from before the switch was queued
