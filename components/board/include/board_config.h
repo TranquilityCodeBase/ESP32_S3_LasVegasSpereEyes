@@ -5,7 +5,8 @@
 // ---------- Display: 2.8" round 480x480 IPS, ST7701S, 16-bit RGB565 parallel ----------
 #define BOARD_LCD_H_RES          480        // Pixels per line
 #define BOARD_LCD_V_RES          480        // Lines per frame
-#define BOARD_LCD_PCLK_HZ        (18 * 1000 * 1000)   // 18 MHz pixel clock (demo value), about 64 Hz refresh
+#define BOARD_LCD_PCLK_HZ        (16 * 1000 * 1000)   // 16 MHz pixel clock, about 57 Hz refresh. The demo uses 18 MHz;
+                                                       // lower leaves PSRAM bandwidth for drawing (no image drift)
 
 // RGB timing (demo values)
 #define BOARD_LCD_HSYNC_PULSE    8

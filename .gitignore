@@ -39,3 +39,7 @@ __pycache__/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Reference photos and videos: keep the folder, never commit the media
+.claude/ReferenceImages/*
+!.claude/ReferenceImages/README.md
