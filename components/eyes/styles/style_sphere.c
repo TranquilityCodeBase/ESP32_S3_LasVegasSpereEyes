@@ -1,5 +1,6 @@
-// style_sphere.c - Las Vegas Sphere look: a shaded yellow ball with two tall white cartoon eyes.
-// Eyes slide across the ball when looking around and get narrower near the rim, like a real globe.
+// style_sphere.c - Las Vegas Sphere look: shaded yellow ball with tall white cartoon eyes.
+// eyeStyleSphere draws one big eye per screen (each board is one eye). eyeStyleSphereFace puts both eyes
+// on one screen. Eyes slide across the ball when looking around and get narrower near the rim, like a globe.
 #include "eye_style.h"
 
 #include <math.h>
@@ -18,17 +19,28 @@
 // ---------- Geometry (480x480 screen) ----------
 #define SCREEN_C        240.0f      // Screen and ball center
 #define BALL_R          240.0f      // Ball radius = round panel radius
-#define EYE_SPACING     88.0f       // Eye center distance from the middle
-#define EYE_Y           222.0f      // Eye center height at rest
-#define EYE_RX          60.0f       // Eye half width
-#define EYE_RY          86.0f       // Eye half height
-#define OUTLINE_W       6.0f        // Outline thickness
-#define PUPIL_R         30.0f       // Pupil radius
-#define FACE_SHIFT_X    52.0f       // How far the whole face slides at full gaze
-#define FACE_SHIFT_Y    40.0f
-#define SHADOW_DX       4.0f        // Drop shadow offset and softness
-#define SHADOW_DY       9.0f
-#define SHADOW_SOFT     14.0f
+
+// Proportions of one eye, relative to its half height (ry). Same look at any size.
+#define OUTLINE_K       0.07f       // Outline thickness
+#define PUPIL_K         0.35f       // Pupil radius
+#define SHADOW_DX_K     0.05f       // Drop shadow offset
+#define SHADOW_DY_K     0.10f
+#define SHADOW_SOFT_MAX 18.0f       // Soft edge limit in px (wider bands cost CPU)
+#define LID_SOFT_MAX    12.0f       // Soft edge of the lid shadow on the white
+
+// One eye per screen (each board is one eye of the face)
+#define EYE1_RX         128.0f      // Eye half width
+#define EYE1_RY         184.0f      // Eye half height
+#define EYE1_SHIFT_X    48.0f       // How far the eye slides at full gaze
+#define EYE1_SHIFT_Y    30.0f
+
+// Two eyes on one screen (whole face on one board)
+#define EYE2_SPACING    88.0f       // Eye center distance from the middle
+#define EYE2_Y          222.0f      // Eye center height at rest
+#define EYE2_RX         60.0f
+#define EYE2_RY         86.0f
+#define EYE2_SHIFT_X    52.0f
+#define EYE2_SHIFT_Y    40.0f
 
 // 4x4 ordered dither, so the gradient has no visible bands in RGB565
 static const uint8_t bayer4[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
@@ -71,69 +83,103 @@ static void sphereBackground(uint16_t *buf, int w, int h) {
     }
 }
 
-static int sphereLayout(const face_state_t *face, eye_pose_t *poses, int maxPoses) {
+// Fill one pose: size with foreshortening toward the rim, openness, and pupil offset from the gaze
+static void placeEye(const face_state_t *face, eye_pose_t *p, float cx, float cy, float rx, float ry) {
+    p->cx = cx;
+    p->cy = cy;
+    float dx = (cx - SCREEN_C) / BALL_R;                                // Position on the ball, -1..1
+    float dy = (cy - SCREEN_C) / BALL_R;
+    p->rx = rx * (1.0f - 0.35f * dx * dx);                              // Narrower toward the rim, like a globe
+    p->ry = ry * (1.0f - 0.20f * dy * dy);
+    p->openness = p->isLeft ? face->openLeft : face->openRight;
+    p->pupilScale = face->pupilScale;
+    float pr = PUPIL_K * p->ry * p->pupilScale;
+    p->pupilDx = face->gazeX * (p->rx - pr - 0.05f * p->ry);           // Pupil looks too, staying inside the white
+    p->pupilDy = face->gazeY * (p->ry - pr - 0.12f * p->ry);
+}
+
+static int sphereEyeLayout(const face_state_t *face, eye_pose_t *poses, int maxPoses) {
+    if (maxPoses < 1) return 0;
+    poses[0].isLeft = face->isLeftEye;                                  // This board's eye
+    placeEye(face, &poses[0], SCREEN_C + face->gazeX * EYE1_SHIFT_X, SCREEN_C + face->gazeY * EYE1_SHIFT_Y,
+             EYE1_RX, EYE1_RY);
+    return 1;
+}
+
+static int sphereFaceLayout(const face_state_t *face, eye_pose_t *poses, int maxPoses) {
     if (maxPoses < 2) return 0;
-    float shiftX = face->gazeX * FACE_SHIFT_X;                          // Whole face slides toward the target
-    float shiftY = face->gazeY * FACE_SHIFT_Y;
+    float shiftX = face->gazeX * EYE2_SHIFT_X;                          // Whole face slides toward the target
+    float shiftY = face->gazeY * EYE2_SHIFT_Y;
     for (int i = 0; i < 2; i++) {
-        eye_pose_t *p = &poses[i];
-        p->isLeft = (i == 0);
-        p->cx = SCREEN_C + (p->isLeft ? -EYE_SPACING : EYE_SPACING) + shiftX;
-        p->cy = EYE_Y + shiftY;
-        float dx = (p->cx - SCREEN_C) / BALL_R;                         // Position on the ball, -1..1
-        float dy = (p->cy - SCREEN_C) / BALL_R;
-        p->rx = EYE_RX * (1.0f - 0.35f * dx * dx);                      // Foreshortening toward the rim
-        p->ry = EYE_RY * (1.0f - 0.20f * dy * dy);
-        p->openness = p->isLeft ? face->openLeft : face->openRight;
-        p->pupilScale = face->pupilScale;
-        float pr = PUPIL_R * p->pupilScale;
-        p->pupilDx = face->gazeX * (p->rx - pr - 4.0f);                 // Pupil looks too, staying inside the white
-        p->pupilDy = face->gazeY * (p->ry - pr - 10.0f);
+        poses[i].isLeft = (i == 0);
+        float cx = SCREEN_C + (poses[i].isLeft ? -EYE2_SPACING : EYE2_SPACING) + shiftX;
+        placeEye(face, &poses[i], cx, EYE2_Y + shiftY, EYE2_RX, EYE2_RY);
     }
     return 2;
 }
 
+static float shadowSoft(const eye_pose_t *pose) {
+    float soft = 0.16f * pose->ry;                                      // Softness grows with size, capped
+    return soft > SHADOW_SOFT_MAX ? SHADOW_SOFT_MAX : soft;
+}
+
 static eye_rect_t sphereBounds(const eye_pose_t *pose) {
-    // Drop shadow reaches farthest (offset + soft edge); outline is covered by it
-    eye_ellipse_t shadow = {pose->cx + SHADOW_DX, pose->cy + SHADOW_DY, pose->rx + OUTLINE_W, pose->ry + OUTLINE_W};
-    eye_rect_t r = canvasEllipseBounds(&shadow, SHADOW_SOFT + 1.0f);
-    if (r.x0 > pose->cx - pose->rx - OUTLINE_W - 2) r.x0 = (int)(pose->cx - pose->rx - OUTLINE_W - 2);  // Outline on the other side
-    if (r.y0 > pose->cy - pose->ry - OUTLINE_W - 2) r.y0 = (int)(pose->cy - pose->ry - OUTLINE_W - 2);
+    float ow = OUTLINE_K * pose->ry;
+    // Drop shadow reaches farthest down and right; the outline reaches farthest up and left
+    eye_ellipse_t shadow = {pose->cx + SHADOW_DX_K * pose->ry, pose->cy + SHADOW_DY_K * pose->ry, pose->rx + ow, pose->ry + ow};
+    eye_rect_t r = canvasEllipseBounds(&shadow, shadowSoft(pose) + 1.0f);
+    eye_ellipse_t outline = {pose->cx, pose->cy, pose->rx + ow, pose->ry + ow};
+    eye_rect_t o = canvasEllipseBounds(&outline, 2.0f);
+    if (o.x0 < r.x0) r.x0 = o.x0;
+    if (o.y0 < r.y0) r.y0 = o.y0;
     return r;
 }
 
 static void sphereDrawEye(eye_canvas_t *cv, const eye_pose_t *pose) {
     float open = pose->openness < 0.0f ? 0.0f : (pose->openness > 1.0f ? 1.0f : pose->openness);
     float ry = pose->ry * open;                                         // Blink squashes the eye toward its middle
+    float ow = OUTLINE_K * pose->ry;                                    // Outline width for this size
 
-    eye_ellipse_t shadow = {pose->cx + SHADOW_DX, pose->cy + SHADOW_DY, pose->rx + OUTLINE_W, ry + OUTLINE_W};
-    canvasFillEllipse(cv, &shadow, EYE_SHADOW, 90, SHADOW_SOFT, NULL); // Soft drop shadow on the ball
-
-    eye_ellipse_t outline = {pose->cx, pose->cy, pose->rx + OUTLINE_W, ry + OUTLINE_W};
-    canvasFillEllipse(cv, &outline, EYE_OUTLINE, 255, 1.0f, NULL);     // Shut eye = just this dark line
-    if (ry < 1.0f) return;
-
+    eye_ellipse_t outline = {pose->cx, pose->cy, pose->rx + ow, ry + ow};
     eye_ellipse_t sclera = {pose->cx, pose->cy, pose->rx, ry};
-    canvasFillEllipse(cv, &sclera, SCLERA_SHADE, 255, 1.0f, NULL);     // Shaded white
+    float lidSoft = 0.12f * pose->ry > LID_SOFT_MAX ? LID_SOFT_MAX : 0.12f * pose->ry;
     eye_ellipse_t lit = {pose->cx, pose->cy + ry * 0.14f, pose->rx * 0.97f, ry * 0.95f};
-    canvasFillEllipse(cv, &lit, SCLERA_WHITE, 255, 10.0f, &sclera);    // Bright lower part, soft lid shadow on top
+    eye_ellipse_t litCore = {lit.cx, lit.cy, lit.rx - lidSoft, lit.ry - lidSoft};    // Where the white is solid
+    bool open1 = ry >= 1.0f;                                            // Any white showing
 
-    float pr = PUPIL_R * pose->pupilScale;
+    eye_ellipse_t shadow = {pose->cx + SHADOW_DX_K * pose->ry, pose->cy + SHADOW_DY_K * pose->ry, pose->rx + ow, ry + ow};
+    canvasFillEllipse(cv, &shadow, EYE_SHADOW, 90, shadowSoft(pose), NULL, &outline);   // Soft drop shadow, only outside the eye
+    canvasFillEllipse(cv, &outline, EYE_OUTLINE, 255, 1.0f, NULL, open1 ? &sclera : NULL);   // Shut eye = just this dark line
+    if (!open1) return;
+
+    canvasFillEllipse(cv, &sclera, SCLERA_SHADE, 255, 1.0f, NULL, litCore.ry > 0.0f ? &litCore : NULL);   // Shaded white
+    canvasFillEllipse(cv, &lit, SCLERA_WHITE, 255, lidSoft, &sclera, NULL);   // Bright lower part, soft lid shadow on top
+
+    float pr = PUPIL_K * pose->ry * pose->pupilScale;
     float px = pose->cx + pose->pupilDx;
     float py = pose->cy + pose->pupilDy;
     eye_ellipse_t pupil = {px, py, pr, pr};
-    canvasFillEllipse(cv, &pupil, PUPIL_COLOR, 255, 1.0f, &sclera);    // Pupil, hidden by the lids when blinking
+    canvasFillEllipse(cv, &pupil, PUPIL_COLOR, 255, 1.0f, &sclera, NULL);    // Pupil, hidden by the lids when blinking
 
+    // Glints sit upper left on both eyes: one light source for the whole face
     eye_ellipse_t glintBig = {px - pr * 0.36f, py - pr * 0.38f, pr * 0.30f, pr * 0.30f};
-    canvasFillEllipse(cv, &glintBig, GLINT_COLOR, 255, 1.0f, &sclera); // Main reflection
+    canvasFillEllipse(cv, &glintBig, GLINT_COLOR, 255, 1.0f, &sclera, NULL); // Main reflection
     eye_ellipse_t glintSmall = {px + pr * 0.36f, py + pr * 0.34f, pr * 0.13f, pr * 0.13f};
-    canvasFillEllipse(cv, &glintSmall, GLINT_COLOR, 230, 1.0f, &sclera);   // Second, smaller reflection
+    canvasFillEllipse(cv, &glintSmall, GLINT_COLOR, 230, 1.0f, &sclera, NULL);   // Second, smaller reflection
 }
 
 const eye_style_t eyeStyleSphere = {
     .name = "sphere",
     .renderBackground = sphereBackground,
-    .layout = sphereLayout,
+    .layout = sphereEyeLayout,
+    .bounds = sphereBounds,
+    .drawEye = sphereDrawEye,
+};
+
+const eye_style_t eyeStyleSphereFace = {
+    .name = "sphere_face",
+    .renderBackground = sphereBackground,
+    .layout = sphereFaceLayout,
     .bounds = sphereBounds,
     .drawEye = sphereDrawEye,
 };

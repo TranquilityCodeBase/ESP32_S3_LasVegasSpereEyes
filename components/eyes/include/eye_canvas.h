@@ -27,8 +27,9 @@ typedef struct {
 
 // Fill an ellipse. color = 0xRRGGBB, alpha 0..255, edge = soft edge width in px (1 = crisp anti-aliasing).
 // clip = optional ellipse the fill is limited to (anti-aliased), or NULL.
+// hole = optional ellipse to skip, for areas a later layer covers solidly anyway (saves overdraw), or NULL.
 void canvasFillEllipse(eye_canvas_t *cv, const eye_ellipse_t *shape, uint32_t color, uint8_t alpha,
-                       float edge, const eye_ellipse_t *clip);
+                       float edge, const eye_ellipse_t *clip, const eye_ellipse_t *hole);
 
 // Bounding box of an ellipse grown by margin px
 eye_rect_t canvasEllipseBounds(const eye_ellipse_t *e, float margin);

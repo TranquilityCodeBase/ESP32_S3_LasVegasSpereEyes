@@ -65,7 +65,7 @@ static inline void innerRange(float cx, float hw, int *a, int *b) {
 }
 
 void canvasFillEllipse(eye_canvas_t *cv, const eye_ellipse_t *shape, uint32_t color, uint8_t alpha,
-                       float edge, const eye_ellipse_t *clip) {
+                       float edge, const eye_ellipse_t *clip, const eye_ellipse_t *hole) {
     if (alpha == 0 || shape->rx <= 0.0f || shape->ry <= 0.0f) return;   // Nothing to draw
     if (edge < 1.0f) edge = 1.0f;                                       // Minimum is 1 px anti-aliasing
     const uint16_t src = canvasRgb565(color);
@@ -73,6 +73,7 @@ void canvasFillEllipse(eye_canvas_t *cv, const eye_ellipse_t *shape, uint32_t co
     const int alpha256 = alpha + (alpha >> 7);                          // 0..255 -> 0..256
     const prepared_t s = prepare(shape);
     const prepared_t c = clip ? prepare(clip) : s;
+    const prepared_t hp = hole ? prepare(hole) : s;
 
     // Rows the shape can touch, limited to the canvas
     int yStart = (int)floorf(shape->cy - shape->ry - edge);
@@ -111,12 +112,21 @@ void canvasFillEllipse(eye_canvas_t *cv, const eye_ellipse_t *shape, uint32_t co
         if (sb > xb) sb = xb;
         if (sb < sa) sb = sa;
 
-        uint16_t *row = cv->buf + (y - cv->y0) * cv->w - cv->x0;        // Index with screen x
-        for (int x = sa; x < sb; x++) {                                 // Solid run
-            row[x] = (alpha256 >= 256) ? src : blend565(row[x], src, alpha256);
+        int ha = xb, hb = xb;                                           // Pixels to skip (inside the hole)
+        if (hole) {
+            float holeIn = halfWidth(&hp, py - hp.cy, -1.0f);
+            if (holeIn >= 0.0f) innerRange(hp.cx, holeIn, &ha, &hb);
+            if (hb <= ha) ha = hb = xb;
         }
+
+        uint16_t *row = cv->buf + (y - cv->y0) * cv->w - cv->x0;        // Index with screen x
+        int runEnd = sb < ha ? sb : ha;                                 // Solid run up to the hole
+        int runStart = sa > hb ? sa : hb;                               // Solid run after the hole
+        for (int x = sa; x < runEnd; x++) row[x] = (alpha256 >= 256) ? src : blend565(row[x], src, alpha256);
+        for (int x = runStart; x < sb; x++) row[x] = (alpha256 >= 256) ? src : blend565(row[x], src, alpha256);
         for (int x = xa; x < xb; x++) {                                 // Edge pixels on both sides
             if (x == sa && sb > sa) { x = sb - 1; continue; }           // Skip the solid run
+            if (x >= ha && x < hb) { x = hb - 1; continue; }            // Skip the hole
             float px = x + 0.5f;
             float cov = coverage(&s, px, py, invEdge);
             if (clip && (x < ca || x >= cb)) {                          // Near the clip edge: combine coverages

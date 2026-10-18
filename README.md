@@ -1,8 +1,9 @@
 # ESP32_S3_LasVegasSpereEyes
 
 Las Vegas Sphere style eyeballs on the Waveshare ESP32-S3-Touch-LCD-2.8C (round 480x480 ST7701S panel).
-A shaded yellow ball with two white cartoon eyes that look around and blink. Later: follow people with an
-HLK-LD2450 radar, and keep two boards in step over ESP-NOW.
+Each board is one eye: a shaded yellow ball with a big white cartoon eye that looks around and blinks.
+Two boards side by side make the face. Later: follow people with an HLK-LD2450 radar, and keep the two
+boards in step over ESP-NOW.
 
 ![Preview](docs/preview.png)
 
@@ -28,7 +29,7 @@ Run that from the build folder. The boot log prints the frame rate every 10 s (1
 | File | What |
 |---|---|
 | `components/board/include/board_config.h` | Pins, panel timing, backlight level |
-| `main/app_config.h` | Frame rate, radar pins and on/off, ESP-NOW role |
+| `main/app_config.h` | Which eye this board is (`APP_EYE_IS_LEFT`), frame rate, radar pins and on/off, ESP-NOW role |
 | `main/secrets.h` | ESP-NOW keys and peer MAC. Gitignored: copy `main/secrets_example.h` |
 
 Backlight: GPIO6 PWM (5 kHz, 13-bit) drives an N-MOSFET on the LED cathode. The Waveshare demo boots at 70 %.
@@ -44,13 +45,14 @@ components/eyes       Renderer, animator, and the three plug-in points:
   gaze/               gaze_source_t: where to look (idle wander)
 components/ld2450     HLK-LD2450 UART driver + gaze source (off until wired)
 components/eye_sync   ESP-NOW leader/follower link + gaze source (off by default)
-main                  Picks style and gaze sources, runs the 30 fps render task
+main                  Picks style, eye side and gaze sources, runs the 30 fps render task
 ```
 
 Rendering redraws only the area around the eyes each frame (anti-aliased ellipses in an internal-RAM strip),
 then page-flips at the panel's frame boundary, so there is no tearing.
 
 - New look: add `styles/style_x.c` with an `eye_style_t`, declare it in `eye_style.h`, pass it to `eyeRendererInit`.
+  Built in: `eyeStyleSphere` (one eye per screen, default) and `eyeStyleSphereFace` (both eyes on one screen).
 - New blink: add a `blink_effect_t` in `blink/blink_effects.c` and append it to `blinkEffectTable` (append only: the index goes over ESP-NOW).
 - New input: implement `gaze_source_t` and add it to `gazeSources` in `app_main.c`. Higher in the list wins.
 
@@ -62,6 +64,7 @@ Untested on hardware: if the eyes look the wrong way, set `APP_RADAR_MIRROR_X tr
 
 ## Two boards (ESP-NOW)
 
-Set `APP_SYNC_ROLE` to 1 (leader) on one board and 2 (follower) on the other. Broadcast and unencrypted by
+Flash one board with `APP_EYE_IS_LEFT 1` and the other with `0`. Set `APP_SYNC_ROLE` to 1 (leader) on one
+board and 2 (follower) on the other. Broadcast and unencrypted by
 default, so no MAC or key is needed. The follower copies the leader's gaze and blinks, and falls back to its
 own idle wander if the leader goes quiet. Untested on hardware.

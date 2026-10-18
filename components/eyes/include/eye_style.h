@@ -17,6 +17,7 @@ typedef struct {
     float openLeft, openRight;  // Lid openness, 0 shut .. 1 open
     float pupilScale;           // 1 = normal, >1 dilated
     uint32_t timeMs;            // Animation clock, for styles with idle motion
+    bool isLeftEye;             // Which eye this board shows (one-eye styles), viewer's left = true
 } face_state_t;
 
 // One eye ready to draw, in screen pixels
@@ -38,7 +39,8 @@ typedef struct eye_style {
 } eye_style_t;
 
 // Built-in styles (styles/*.c)
-extern const eye_style_t eyeStyleSphere;      // Yellow ball, white cartoon eyes (Las Vegas Sphere)
+extern const eye_style_t eyeStyleSphere;      // Yellow ball, one big white cartoon eye per screen (Las Vegas Sphere)
+extern const eye_style_t eyeStyleSphereFace;  // Same look, both eyes on one screen
 
 #ifdef __cplusplus
 }

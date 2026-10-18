@@ -3,6 +3,11 @@
 
 #include "board_config.h"
 
+// ---------- Which eye this board is ----------
+// Each board shows one eye. Mount the boards side by side as seen by the viewer.
+// 1 = viewer's left eye, 0 = viewer's right eye. Matters for winks and the ESP-NOW pair.
+#define APP_EYE_IS_LEFT         1
+
 // ---------- Rendering ----------
 #define APP_TARGET_FPS          30          // Animation frame rate (panel refreshes at about 64 Hz)
 #define APP_RENDER_CORE         1           // CPU core for the render task (Wi-Fi runs on core 0)

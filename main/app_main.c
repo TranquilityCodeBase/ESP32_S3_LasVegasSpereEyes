@@ -62,6 +62,7 @@ static void renderTask(void *arg) {
     while (true) {
         syncStep();
         eyeAnimatorUpdate(nowMs(), &face);                              // Where to look, how open
+        face.isLeftEye = APP_EYE_IS_LEFT;                               // Which eye of the pair this board draws
         eyeRendererDraw(&face);                                         // Draw and flip
         if (++frames == APP_TARGET_FPS * 10) {                          // Frame rate in the log every 10 s
             uint32_t elapsed = nowMs() - fpsStartMs;
