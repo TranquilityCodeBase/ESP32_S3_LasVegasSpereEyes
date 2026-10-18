@@ -1,0 +1,41 @@
+# ESP-IDF build output
+build/
+build-*/
+managed_components/
+dependencies.lock
+sdkconfig
+sdkconfig.old
+*.bin
+*.elf
+*.map
+
+# Local secrets (copy main/secrets_example.h to main/secrets.h). Never commit keys or MACs.
+main/secrets.h
+sdkconfig.defaults.local
+
+# Editors: VS Code, Visual Studio, clangd
+.vscode/
+.vs/
+.cache/
+.clangd/
+*.code-workspace
+
+# Backup and temp files
+*.bak
+*.tmp
+*.orig
+*~
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Claude Code local settings
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# OS files
+Thumbs.db
+desktop.ini
+.DS_Store
