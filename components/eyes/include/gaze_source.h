@@ -26,6 +26,7 @@ typedef struct gaze_source {
 
 // Built-in sources
 extern const gaze_source_t gazeSourceIdle;     // Always valid: wanders, glances around, returns to center (gaze/gaze_idle.c)
+extern const gaze_source_t gazeSourceCenter;   // Always valid: looks straight ahead (gaze/gaze_center.c)
 
 #ifdef __cplusplus
 }
