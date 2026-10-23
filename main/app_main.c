@@ -44,9 +44,8 @@ static void syncStep(void) {
         state.blinkSeq = eyeAnimatorBlinkSeq(&state.blinkIndex);
         eyeSyncPublish(&state);
     } else if (APP_SYNC_ROLE == EYE_SYNC_ROLE_FOLLOWER) {
-        bool linked = eyeSyncGetLatest(&state, 1000);
-        eyeAnimatorSetAutoBlink(!linked);                               // Blink alone only when the leader is gone
-        if (linked && state.blinkSeq != leaderSeqSeen) {
+        bool linked = eyeSyncGetLatest(&state, 1000);                  // Gaze comes in through gazeSourceSync
+        if (linked && state.blinkSeq != leaderSeqSeen) {                // Master started a blink: copy it
             if (leaderSeqSeen != 0) eyeAnimatorStartBlink(state.blinkIndex);   // Skip the first message after boot
             leaderSeqSeen = state.blinkSeq;
         }
@@ -139,7 +138,9 @@ void app_main(void) {
     if (ld2450Init(&radarConfig) == ESP_OK) gazeSources[gazeSourceCount++] = &gazeSourceLd2450;
     else ESP_LOGW(TAG, "LD2450 failed to start");
 #endif
-    gazeSources[gazeSourceCount++] = &gazeSourceIdle;                   // Always last: look around when nobody is there
+    // Always last. Master: look around when nobody is there. Slave: hold center until the master says otherwise.
+    gazeSources[gazeSourceCount++] = (APP_SYNC_ROLE == EYE_SYNC_ROLE_FOLLOWER) ? &gazeSourceCenter : &gazeSourceIdle;
+    if (APP_SYNC_ROLE == EYE_SYNC_ROLE_FOLLOWER) eyeAnimatorSetAutoBlink(false);   // Slave blinks only on command
     eyeAnimatorInit(gazeSources, gazeSourceCount);
 
     xTaskCreatePinnedToCore(renderTask, "render", 6144, NULL, APP_RENDER_PRIORITY, NULL, APP_RENDER_CORE);

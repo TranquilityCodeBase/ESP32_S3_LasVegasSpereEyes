@@ -22,3 +22,6 @@ CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 # RGB panel: ISR stays in IRAM, restart cleanly at vsync if the stream ever drifts
 CONFIG_LCD_RGB_ISR_IRAM_SAFE=y
 CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
+
+# Wi-Fi (ESP-NOW only): keep its buffers in PSRAM so the panel's internal RAM stays free
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y

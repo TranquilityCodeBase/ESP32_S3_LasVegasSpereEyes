@@ -5,8 +5,11 @@
 
 // ---------- Which eye this board is ----------
 // Each board shows one eye. Mount the boards side by side as seen by the viewer.
-// 1 = viewer's left eye, 0 = viewer's right eye. Matters for winks and the ESP-NOW pair.
-#define APP_EYE_IS_LEFT         1
+// The project CMakeLists.txt sets these: the root folder builds the master (left) eye,
+// eye_slave/ builds the slave (right) eye. The values here are the fallback.
+#ifndef APP_EYE_IS_LEFT
+#define APP_EYE_IS_LEFT         1           // 1 = viewer's left eye, 0 = viewer's right eye
+#endif
 
 // ---------- Rendering ----------
 #define APP_TARGET_FPS          30          // Animation frame rate (panel refreshes at about 64 Hz)
@@ -25,8 +28,10 @@
 #define APP_RADAR_MAX_ANGLE     60.0f       // Bearing (degrees) that maps to the edge of the gaze range
 #define APP_RADAR_MAX_RANGE_M   5.0f        // Ignore people farther than this
 
-// ---------- ESP-NOW sync between the two boards (off by default) ----------
-// 0 = off, 1 = leader (sends gaze and blinks), 2 = follower (copies the leader). Flash one board of each.
-#define APP_SYNC_ROLE           0
+// ---------- ESP-NOW sync between the two boards ----------
+// 0 = off, 1 = master (sends gaze and blinks), 2 = slave (copies the master). Set by the project CMakeLists.txt.
+#ifndef APP_SYNC_ROLE
+#define APP_SYNC_ROLE           1
+#endif
 #define APP_SYNC_CHANNEL        1           // Same Wi-Fi channel on both boards
 #define APP_SYNC_GROUP_ID       0x51        // Same on both boards; change it if two pairs share a room
