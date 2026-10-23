@@ -2,7 +2,7 @@
 
 Las Vegas Sphere style eyeballs on the Waveshare ESP32-S3-Touch-LCD-2.8C (round 480x480 ST7701S panel).
 Each board is one eye: a shaded yellow ball with a big white cartoon eye that looks around and blinks.
-Two boards side by side make the face. Later: follow people with an HLK-LD2450 radar, and keep the two
+Two boards side by side make the face, kept in step over ESP-NOW. Later: follow people with an HLK-LD2450 radar, and keep the two
 boards in step over ESP-NOW.
 
 ![Preview](docs/preview.png)
@@ -64,7 +64,10 @@ Untested on hardware: if the eyes look the wrong way, set `APP_RADAR_MIRROR_X tr
 
 ## Two boards (ESP-NOW)
 
-Flash one board with `APP_EYE_IS_LEFT 1` and the other with `0`. Set `APP_SYNC_ROLE` to 1 (leader) on one
-board and 2 (follower) on the other. Broadcast and unencrypted by
-default, so no MAC or key is needed. The follower copies the leader's gaze and blinks, and falls back to its
-own idle wander if the leader goes quiet. Untested on hardware.
+This folder builds the **master** (viewer's left eye). `eye_slave/` builds the **slave** (right eye) from the
+same components; only the eye side and ESP-NOW role differ, set in each folder's `CMakeLists.txt`.
+Both boards can be plugged in at once (each gets its own COM port).
+
+The master looks around and blinks on its own and broadcasts its gaze (20 Hz) and every blink. The slave holds
+center and never blinks by itself; it follows the master and eases back to center if the master goes quiet.
+Broadcast and unencrypted by default, so no MAC or key is needed. Tested on two boards.

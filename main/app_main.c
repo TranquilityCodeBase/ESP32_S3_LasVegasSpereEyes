@@ -46,7 +46,10 @@ static void syncStep(void) {
     } else if (APP_SYNC_ROLE == EYE_SYNC_ROLE_FOLLOWER) {
         bool linked = eyeSyncGetLatest(&state, 1000);                  // Gaze comes in through gazeSourceSync
         if (linked && state.blinkSeq != leaderSeqSeen) {                // Master started a blink: copy it
-            if (leaderSeqSeen != 0) eyeAnimatorStartBlink(state.blinkIndex);   // Skip the first message after boot
+            if (leaderSeqSeen != 0) {                                   // Skip the first message after boot
+                eyeAnimatorStartBlink(state.blinkIndex);
+                ESP_LOGI(TAG, "Blink from master: %s", blinkEffectTable[state.blinkIndex % blinkEffectCount]->name);
+            }
             leaderSeqSeen = state.blinkSeq;
         }
     }
