@@ -98,6 +98,7 @@ static void placeEye(const face_state_t *face, eye_pose_t *p, float cx, float cy
     p->ry = ry * (1.0f - 0.20f * dy * dy);
     p->openness = p->isLeft ? face->openLeft : face->openRight;
     p->pupilScale = face->pupilScale;
+    p->timeMs = face->timeMs;
     float pr = PUPIL_K * p->ry * p->pupilScale;
     p->pupilDx = face->gazeX * (p->rx - pr - pupilGap * p->ry);        // Pupil looks too, staying inside the white
     p->pupilDy = face->gazeY * (p->ry - pr - 0.12f * p->ry);

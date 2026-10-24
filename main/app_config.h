@@ -44,6 +44,10 @@
 #define APP_RENDER_PRIORITY     5
 #define APP_DEBUG_FRAME_DUMP    0           // 1 = print the on-screen frame over the console every 3 s (debug only)
 
+// ---------- Design rotation ----------
+// The master steps through the designs listed in stylePlaylist (app_main.c) and tells the slave which one to show.
+#define APP_STYLE_SECONDS       15          // Time on each design (0 = stay on the first one)
+
 // ---------- LD2450 radar (off until the radar is wired) ----------
 // Wire radar TX -> GPIO19 and radar RX -> GPIO20 on the 12-pin header, 5 V from USB_5V on the same header.
 // GPIO43/44 are not used because they reach the header only with the USB-C port unplugged.
