@@ -30,11 +30,35 @@ static const char *TAG = "app";
 static const gaze_source_t *gazeSources[3];     // Priority order, idle last
 static int gazeSourceCount;
 
+// Designs to rotate through, in order. Add a new style here (and in eye_style.h). Append only: the slave
+// gets the position in this list over ESP-NOW, so both boards must be flashed with the same list.
+static const eye_style_t *const stylePlaylist[] = {
+    &eyeStyleSphere,        // Las Vegas Sphere cartoon eye
+    &eyeStyleSauron,        // Flaming dark-lord eye
+};
+#define STYLE_COUNT ((int)(sizeof(stylePlaylist) / sizeof(stylePlaylist[0])))
+
+static int styleIndex;                          // Design on screen now
+static uint32_t styleStartMs;                   // When it went up
+
 static uint32_t nowMs(void) {
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
 
-// Sync: the leader sends its state, the follower copies blinks (gaze comes in through gazeSourceSync)
+// Put a design on screen (redraws the whole screen once)
+static void showStyle(int index) {
+    styleIndex = index % STYLE_COUNT;
+    styleStartMs = nowMs();
+    eyeRendererSetStyle(stylePlaylist[styleIndex]);
+}
+
+// Master (or a board on its own): next design every APP_STYLE_SECONDS. The slave waits to be told.
+static void styleStep(void) {
+    if (APP_SYNC_ROLE == EYE_SYNC_ROLE_FOLLOWER || APP_STYLE_SECONDS == 0 || STYLE_COUNT < 2) return;
+    if (nowMs() - styleStartMs >= APP_STYLE_SECONDS * 1000u) showStyle(styleIndex + 1);
+}
+
+// Sync: the leader sends its state, the follower copies blinks and the design (gaze comes in through gazeSourceSync)
 static void syncStep(void) {
     static uint32_t leaderSeqSeen;                                      // Last leader blink we copied
     eye_sync_state_t state = {0};
@@ -44,6 +68,7 @@ static void syncStep(void) {
         state.gazeX = target.x;
         state.gazeY = target.y;
         state.blinkSeq = eyeAnimatorBlinkSeq(&state.blinkIndex);
+        state.styleIndex = (uint8_t)styleIndex;
         eyeSyncPublish(&state);
     } else if (APP_SYNC_ROLE == EYE_SYNC_ROLE_FOLLOWER) {
         bool linked = eyeSyncGetLatest(&state, 1000);                  // Gaze comes in through gazeSourceSync
@@ -53,6 +78,9 @@ static void syncStep(void) {
                 ESP_LOGI(TAG, "Blink from master: %s", blinkEffectTable[state.blinkIndex % blinkEffectCount]->name);
             }
             leaderSeqSeen = state.blinkSeq;
+        }
+        if (linked && state.styleIndex % STYLE_COUNT != styleIndex) {  // Master changed design: follow it
+            showStyle(state.styleIndex);
         }
     }
 }
@@ -85,7 +113,8 @@ static void renderTask(void *arg) {
     };
     canvasSetColorTrim(APP_COLOR_TRIM_R, APP_COLOR_TRIM_G, APP_COLOR_TRIM_B, APP_GRAY_GAMMA);   // Match this screen to the other one
     canvasSetWhiteBalance(APP_WHITE_R, APP_WHITE_G, APP_WHITE_B);
-    ESP_ERROR_CHECK(eyeRendererInit(&display, &eyeStyleSphere));
+    ESP_ERROR_CHECK(eyeRendererInit(&display, stylePlaylist[0]));
+    styleStartMs = nowMs();
 
     const TickType_t framePeriod = pdMS_TO_TICKS(1000 / APP_TARGET_FPS);
     TickType_t lastWake = xTaskGetTickCount();
@@ -93,6 +122,7 @@ static void renderTask(void *arg) {
     int frames = 0;
     face_state_t face;
     while (true) {
+        styleStep();                                                    // Time for the next design?
         syncStep();
         eyeAnimatorUpdate(nowMs(), &face);                              // Where to look, how open
         face.isLeftEye = APP_EYE_IS_LEFT;                               // Which eye of the pair this board draws

@@ -28,6 +28,7 @@ typedef struct {
     float pupilDx, pupilDy;     // Pupil offset from the eye center
     float pupilScale;           // Pupil size factor
     bool isLeft;                // Viewer's left eye
+    uint32_t timeMs;            // Animation clock, for styles that move on their own (flames)
 } eye_pose_t;
 
 typedef struct eye_style {
@@ -43,6 +44,7 @@ typedef struct eye_style {
 // Built-in styles (styles/*.c)
 extern const eye_style_t eyeStyleSphere;      // Yellow ball, one big white cartoon eye per screen (Las Vegas Sphere)
 extern const eye_style_t eyeStyleSphereFace;  // Same look, both eyes on one screen
+extern const eye_style_t eyeStyleSauron;      // Flaming dark-lord eye with a slit pupil, one per screen (Halloween)
 
 #ifdef __cplusplus
 }

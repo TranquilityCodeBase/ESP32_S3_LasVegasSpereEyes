@@ -11,7 +11,7 @@
 
 #define SYNC_MAGIC0        'E'      // Packet magic bytes
 #define SYNC_MAGIC1        'Y'
-#define SYNC_VERSION       1        // Bump when the packet layout changes
+#define SYNC_VERSION       2        // Bump when the packet layout changes (2: added styleIndex)
 #define SYNC_SCALE         10000.0f // Floats travel as int16 x10000
 #define SYNC_MIN_GAP_US    50000    // 20 Hz publish limit
 #define SYNC_FRESH_MS      300      // Follower gaze source freshness window
@@ -27,6 +27,7 @@ typedef struct __attribute__((packed)) {
     uint32_t blinkSeq;      // Leader blink counter
     uint8_t blinkIndex;     // Blink effect index
     uint8_t hasTarget;      // 0/1
+    uint8_t styleIndex;     // Leader's design
 } eye_sync_packet_t;
 
 static const char *TAG = "eye_sync";
@@ -62,6 +63,7 @@ static void syncOnRecv(const esp_now_recv_info_t *info, const uint8_t *data, int
         .blinkSeq = pkt->blinkSeq,
         .blinkIndex = pkt->blinkIndex,
         .hasTarget = pkt->hasTarget != 0,
+        .styleIndex = pkt->styleIndex,
     };
     int64_t now = esp_timer_get_time();                 // Stamp outside the lock
     portENTER_CRITICAL(&syncMux);
@@ -120,6 +122,7 @@ void eyeSyncPublish(const eye_sync_state_t *state) {
         .blinkSeq = state->blinkSeq,
         .blinkIndex = state->blinkIndex,
         .hasTarget = state->hasTarget ? 1 : 0,
+        .styleIndex = state->styleIndex,
     };
     esp_err_t err = esp_now_send(syncPeer, (const uint8_t *)&pkt, sizeof(pkt));
     if (err != ESP_OK) {
