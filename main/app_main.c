@@ -35,6 +35,7 @@ static int gazeSourceCount;
 static const eye_style_t *const stylePlaylist[] = {
     &eyeStyleSphere,        // Las Vegas Sphere cartoon eye
     &eyeStyleSauron,        // Flaming dark-lord eye
+    &eyeStyleSphereDrunk,   // Bloodshot, droopy Sphere eye
 };
 #define STYLE_COUNT ((int)(sizeof(stylePlaylist) / sizeof(stylePlaylist[0])))
 

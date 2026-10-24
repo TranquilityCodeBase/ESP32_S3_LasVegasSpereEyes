@@ -142,13 +142,19 @@ static int prepareStyle(const eye_style_t *s) {
         if (readyStyles[i] == s) return i;                            // Already done
     }
     if (readyCount == MAX_STYLES) return -1;
+    int64_t t0 = esp_timer_get_time();
+    if (s->prepare) s->prepare();                                     // Style's own one-time setup
     uint16_t *bg = NULL;
-    if (!s->blackBackground) {                                        // Black needs no buffer: strips are cleared
+    for (int i = 0; i < readyCount && !s->blackBackground; i++) {
+        if (readyStyles[i]->renderBackground == s->renderBackground) bg = readyBackgrounds[i];   // Same background: share it
+    }
+    if (bg == NULL && !s->blackBackground) {                          // Black needs no buffer: strips are cleared
         bg = heap_caps_malloc((size_t)disp.width * disp.height * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
         if (bg == NULL) return -1;
+        s->renderBackground(bg, disp.width, disp.height);
+    } else if (bg == NULL) {
+        s->renderBackground(NULL, disp.width, disp.height);           // Black: no buffer, just get ready
     }
-    int64_t t0 = esp_timer_get_time();
-    s->renderBackground(bg, disp.width, disp.height);                 // Also builds anything else the style needs
     ESP_LOGI(TAG, "Prepared %s in %lld ms", s->name, (esp_timer_get_time() - t0) / 1000);
     readyStyles[readyCount] = s;
     readyBackgrounds[readyCount] = bg;

@@ -1,9 +1,11 @@
 // style_sphere.c - Las Vegas Sphere look: shaded yellow ball with tall white cartoon eyes.
 // eyeStyleSphere draws one big eye per screen (each board is one eye). eyeStyleSphereFace puts both eyes
 // on one screen. Eyes slide across the ball when looking around and get narrower near the rim, like a globe.
+// eyeStyleSphereDrunk (bottom of the file) is the bloodshot Halloween variation.
 #include "eye_style.h"
 
 #include <math.h>
+#include <stdlib.h>
 
 // ---------- Look ----------
 #define BALL_LIT        0xFFD83A    // Yellow where the light hits
@@ -156,7 +158,8 @@ static eye_rect_t sphereDetailBounds(const eye_pose_t *pose) {
     return canvasEllipseBounds(&pupil, 2.0f);
 }
 
-static void sphereDrawEye(eye_canvas_t *cv, const eye_pose_t *pose) {
+// Shadow, outline and white of one eye. Returns false when the eye is shut (nothing more to draw).
+static bool drawEyeBody(eye_canvas_t *cv, const eye_pose_t *pose) {
     float open = pose->openness < 0.0f ? 0.0f : (pose->openness > 1.0f ? 1.0f : pose->openness);
     float ry = pose->ry * open;                                         // Blink squashes the eye toward its middle
     float ow = OUTLINE_K * pose->ry;                                    // Outline width for this size
@@ -171,11 +174,17 @@ static void sphereDrawEye(eye_canvas_t *cv, const eye_pose_t *pose) {
     eye_ellipse_t shadow = {pose->cx + SHADOW_DX_K * pose->ry, pose->cy + SHADOW_DY_K * pose->ry, pose->rx + ow, ry + ow};
     canvasFillEllipse(cv, &shadow, EYE_SHADOW, 90, shadowSoft(pose), NULL, &outline);   // Soft drop shadow, only outside the eye
     canvasFillEllipse(cv, &outline, EYE_OUTLINE, 255, 1.0f, NULL, open1 ? &sclera : NULL);   // Shut eye = just this dark line
-    if (!open1) return;
+    if (!open1) return false;
 
     canvasFillEllipse(cv, &sclera, SCLERA_SHADE, 255, 1.0f, NULL, litCore.ry > 0.0f ? &litCore : NULL);   // Shaded white
     canvasFillEllipse(cv, &lit, SCLERA_WHITE, 255, lidSoft, &sclera, NULL);   // Bright lower part, soft lid shadow on top
+    return true;
+}
 
+// Pupil and its glints, kept inside the white
+static void drawPupil(eye_canvas_t *cv, const eye_pose_t *pose) {
+    float open = pose->openness > 1.0f ? 1.0f : pose->openness;
+    eye_ellipse_t sclera = {pose->cx, pose->cy, pose->rx, pose->ry * open};
     float pr = PUPIL_K * pose->ry * pose->pupilScale;
     float px = pose->cx + pose->pupilDx;
     float py = pose->cy + pose->pupilDy;
@@ -187,6 +196,10 @@ static void sphereDrawEye(eye_canvas_t *cv, const eye_pose_t *pose) {
     canvasFillEllipse(cv, &glintBig, GLINT_COLOR, 255, 1.0f, &sclera, NULL); // Main reflection
     eye_ellipse_t glintSmall = {px + pr * 0.36f, py + pr * 0.34f, pr * 0.13f, pr * 0.13f};
     canvasFillEllipse(cv, &glintSmall, GLINT_COLOR, 230, 1.0f, &sclera, NULL);   // Second, smaller reflection
+}
+
+static void sphereDrawEye(eye_canvas_t *cv, const eye_pose_t *pose) {
+    if (drawEyeBody(cv, pose)) drawPupil(cv, pose);
 }
 
 const eye_style_t eyeStyleSphere = {
@@ -205,4 +218,211 @@ const eye_style_t eyeStyleSphereFace = {
     .bounds = sphereBounds,
     .drawEye = sphereDrawEye,
     .detailBounds = sphereDetailBounds,
+};
+
+// =====================================================================================================
+// Drunk variation: same ball and eye, but bloodshot (jagged red veins creeping in from the corners and a
+// pink flush around the edge), heavy droopy lids, puffy bags underneath, and pupils that wander lazily,
+// each eye out of step with the other. The veins are drawn once into a small map (one byte per pixel),
+// then laid over the white each frame.
+// =====================================================================================================
+
+// ---------- Look ----------
+#define VEIN_COLOR      0xC4122C    // Blood red; at low strength it reads as a pink flush
+#define LID_COLOR       0xF7C23E    // Heavy upper lid: the ball's yellow...
+#define LID_SHADE       0xDE9A22    // ...darker toward its edge
+#define BAG_COLOR       0xB8661A    // Puffy bags under the eye
+
+// ---------- Shape (fractions of the eye's half height ry or half width rx) ----------
+#define VEIN_W          (2 * (int)EYE1_RX)      // Vein map size = the white at full size (256 x 368)
+#define VEIN_H          (2 * (int)EYE1_RY)
+#define VEIN_COUNT      15          // Main veins (each may branch)
+#define VEIN_STOP_Q     0.38f       // Veins stop this close to the middle (the pupil's home)
+#define FLUSH_START_Q   0.62f       // Pink flush starts this far out...
+#define FLUSH_MAX       70.0f       // ...and reaches this strength (0..255) at the edge
+#define LID_DROOP       0.22f       // Lid edge sits this far above the middle (x ry), at its lowest point
+#define LID_OUTER_SHIFT 0.40f       // Lowest point moved toward the outer corner (x rx): sleepy, sad droop
+#define WOBBLE_X        0.13f       // Pupil wander (x rx)
+#define WOBBLE_Y        0.07f       // (x ry)
+#define LOOK_DOWN       0.10f       // Pupils sag a little (x ry), so they stay below the heavy lids
+
+static uint8_t *veinMap;            // VEIN_W x VEIN_H redness 0..255, NULL = not built yet
+static uint32_t veinSeed = 12345;   // Fixed seed: the same bloodshot pattern every boot
+
+static float veinRandom(void) {     // 0..1
+    veinSeed = veinSeed * 1664525u + 1013904223u;
+    return (veinSeed >> 8) / 16777216.0f;
+}
+
+// Paint a round-ended line from (x0,y0) to (x1,y1), width w, strength 0..255 (keeps the stronger value)
+static void veinSegment(float x0, float y0, float x1, float y1, float w, float strength) {
+    float r = w * 0.5f + 1.0f;
+    int bx0 = (int)fmaxf(0.0f, fminf(x0, x1) - r), bx1 = (int)fminf(VEIN_W - 1, fmaxf(x0, x1) + r);
+    int by0 = (int)fmaxf(0.0f, fminf(y0, y1) - r), by1 = (int)fminf(VEIN_H - 1, fmaxf(y0, y1) + r);
+    float dx = x1 - x0, dy = y1 - y0, len2 = dx * dx + dy * dy + 1e-6f;
+    for (int y = by0; y <= by1; y++) {
+        for (int x = bx0; x <= bx1; x++) {
+            float t = ((x + 0.5f - x0) * dx + (y + 0.5f - y0) * dy) / len2;   // Closest point on the segment
+            t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+            float ex = x + 0.5f - (x0 + dx * t), ey = y + 0.5f - (y0 + dy * t);
+            float cover = w * 0.5f + 0.5f - sqrtf(ex * ex + ey * ey);       // 1 px anti-aliased edge
+            if (cover <= 0.0f) continue;
+            int v = (int)(strength * (cover > 1.0f ? 1.0f : cover));
+            if (v > veinMap[y * VEIN_W + x]) veinMap[y * VEIN_W + x] = (uint8_t)v;
+        }
+    }
+}
+
+// One jagged vein, walking inward from (x,y) in direction ang; may branch
+static void veinWalk(float x, float y, float ang, float w, float strength, int steps, int depth) {
+    const float cx = VEIN_W * 0.5f, cy = VEIN_H * 0.5f;
+    for (int i = 0; i < steps; i++) {
+        float toMiddle = atan2f(cy - y, cx - x);                        // Lean gently toward the middle
+        float turn = toMiddle - ang;
+        while (turn > 3.14159f) turn -= 6.28318f;
+        while (turn < -3.14159f) turn += 6.28318f;
+        ang += 0.15f * turn + (veinRandom() - 0.5f) * 1.3f;             // Big random kinks: jagged, not smooth
+        float step = 4.0f + veinRandom() * 5.0f;
+        float nx = x + cosf(ang) * step, ny = y + sinf(ang) * step;
+        veinSegment(x, y, nx, ny, w, strength);
+        x = nx;
+        y = ny;
+        float u = (x - cx) / cx, v = (y - cy) / cy;
+        if (u * u + v * v < VEIN_STOP_Q * VEIN_STOP_Q) return;          // Reached the pupil area
+        w = fmaxf(1.3f, w * 0.95f);                                     // Thinner and fainter toward the tip
+        strength *= 0.975f;
+        if (depth < 2 && veinRandom() < 0.16f) {                        // Fork
+            float side = veinRandom() < 0.5f ? -1.0f : 1.0f;
+            veinWalk(x, y, ang + side * (0.5f + veinRandom() * 0.5f), w * 0.7f, strength * 0.85f, (steps - i) / 2, depth + 1);
+        }
+    }
+}
+
+// Build the vein map once: pink flush toward the edge, then the veins on top
+static void buildVeins(void) {
+    if (veinMap != NULL) return;
+    veinMap = malloc((size_t)VEIN_W * VEIN_H);
+    if (veinMap == NULL) return;                                        // Out of memory: just no veins
+    for (int y = 0; y < VEIN_H; y++) {
+        for (int x = 0; x < VEIN_W; x++) {
+            float u = (x + 0.5f) / (VEIN_W * 0.5f) - 1.0f, v = (y + 0.5f) / (VEIN_H * 0.5f) - 1.0f;
+            float t = (sqrtf(u * u + v * v) - FLUSH_START_Q) / (1.0f - FLUSH_START_Q);
+            veinMap[y * VEIN_W + x] = t <= 0.0f ? 0 : (uint8_t)(FLUSH_MAX * fminf(1.0f, t * t));
+        }
+    }
+    for (int i = 0; i < VEIN_COUNT; i++) {
+        // Most veins start at the left and right corners, like a real bloodshot eye; a few anywhere
+        float a = veinRandom() < 0.75f ? (veinRandom() < 0.5f ? 0.0f : 3.14159f) + (veinRandom() - 0.5f) * 1.4f
+                                       : veinRandom() * 6.28318f;
+        float x = VEIN_W * 0.5f * (1.0f + 0.99f * cosf(a)), y = VEIN_H * 0.5f * (1.0f + 0.99f * sinf(a));
+        veinWalk(x, y, a + 3.14159f, 3.2f + veinRandom() * 1.8f, 245.0f, 14 + (int)(veinRandom() * 16), 0);
+    }
+}
+
+static int drunkLayout(const face_state_t *face, eye_pose_t *poses, int maxPoses) {
+    if (maxPoses < 1) return 0;
+    face_state_t slow = *face;
+    slow.gazeX *= 0.85f;                                                // A little less range: leaves room to wander
+    slow.gazeY *= 0.85f;
+    slow.pupilScale *= 1.12f;                                           // Wide, glassy pupils
+    sphereEyeLayout(&slow, poses, maxPoses);
+    eye_pose_t *p = &poses[0];
+    float t = face->timeMs / 1000.0f;
+    float phase = p->isLeft ? 0.0f : 2.1f;                              // Each eye wanders on its own
+    p->pupilDx += WOBBLE_X * p->rx * (0.7f * sinf(t * 1.10f + phase) + 0.3f * sinf(t * 2.70f + 2.0f * phase));
+    p->pupilDy += WOBBLE_Y * p->ry * sinf(t * 0.83f + 1.3f * phase) + LOOK_DOWN * p->ry;
+    return 1;
+}
+
+// Puffy bag under the eye, on the ball
+static eye_ellipse_t bagShape(const eye_pose_t *pose) {
+    float open = pose->openness < 0.0f ? 0.0f : (pose->openness > 1.0f ? 1.0f : pose->openness);
+    return (eye_ellipse_t){pose->cx, pose->cy + pose->ry * (0.76f + 0.22f * open), pose->rx * 0.85f, pose->ry * 0.22f};   // Follows the lower lid in a blink
+}
+
+static eye_rect_t drunkBounds(const eye_pose_t *pose) {
+    eye_rect_t r = sphereBounds(pose);
+    eye_ellipse_t bag = bagShape(pose);
+    eye_rect_t b = canvasEllipseBounds(&bag, 14.0f);
+    if (b.x0 < r.x0) r.x0 = b.x0;
+    if (b.x1 > r.x1) r.x1 = b.x1;
+    if (b.y1 > r.y1) r.y1 = b.y1;
+    return r;
+}
+
+// Mix an RGB565 pixel toward a color, a = 0..256
+static inline uint16_t blend565(uint16_t px, int cr, int cg, int cb, int a) {
+    int r = px >> 11, g = (px >> 5) & 63, b = px & 31;
+    r += ((cr - r) * a) >> 8;
+    g += ((cg - g) * a) >> 8;
+    b += ((cb - b) * a) >> 8;
+    return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+// Lay the vein map over the white. The map is stretched to the eye's current size, squashed while blinking,
+// and mirrored on the right eye so the two eyes don't match.
+static void drawVeins(eye_canvas_t *cv, const eye_pose_t *pose) {
+    if (veinMap == NULL) return;
+    float open = pose->openness > 1.0f ? 1.0f : pose->openness;
+    float ry = pose->ry * open, rx = pose->rx - 1.0f;                   // 1 px in from the outline
+    uint16_t vein = canvasRgb565(VEIN_COLOR);
+    int vr = vein >> 11, vg = (vein >> 5) & 63, vb = vein & 31;
+    float texPerPx = VEIN_W * 0.5f / rx;                                // Map columns per screen pixel
+    for (int y = cv->y0; y < cv->y0 + cv->h; y++) {
+        float v = (y + 0.5f - pose->cy) / ry;
+        if (v <= -1.0f || v >= 1.0f) continue;
+        float half = rx * sqrtf(1.0f - v * v);                          // White's half width on this row
+        int xa = (int)ceilf(pose->cx - half), xb = (int)floorf(pose->cx + half);
+        if (xa < cv->x0) xa = cv->x0;
+        if (xb > cv->x0 + cv->w) xb = cv->x0 + cv->w;
+        const uint8_t *row = veinMap + (int)((v + 1.0f) * 0.5f * (VEIN_H - 1)) * VEIN_W;
+        uint16_t *out = cv->buf + (y - cv->y0) * cv->w - cv->x0;
+        for (int x = xa; x < xb; x++) {
+            int tx = (int)((x + 0.5f - pose->cx) * texPerPx + VEIN_W * 0.5f);
+            if (tx < 0) tx = 0;
+            if (tx >= VEIN_W) tx = VEIN_W - 1;
+            if (!pose->isLeft) tx = VEIN_W - 1 - tx;                    // Mirror for the other eye
+            int a = row[tx];
+            if (a) out[x] = blend565(out[x], vr, vg, vb, a);
+        }
+    }
+}
+
+// Heavy upper lid with a dark edge line, drooping toward the outer corner
+static void drawLid(eye_canvas_t *cv, const eye_pose_t *pose) {
+    float open = pose->openness > 1.0f ? 1.0f : pose->openness;
+    float ry = pose->ry * open;
+    float ow = OUTLINE_K * pose->ry;
+    eye_ellipse_t sclera = {pose->cx, pose->cy, pose->rx, ry};
+    float lidRx = pose->rx * 1.5f, lidRy = pose->ry * 1.1f;
+    float lidCx = pose->cx + (pose->isLeft ? -1.0f : 1.0f) * LID_OUTER_SHIFT * pose->rx;   // Outer side hangs lower
+    float lidBottom = pose->cy - LID_DROOP * ry;
+    eye_ellipse_t edge = {lidCx, lidBottom - lidRy + ow * 0.8f, lidRx, lidRy};
+    eye_ellipse_t lid = {lidCx, lidBottom - lidRy, lidRx, lidRy};
+    eye_ellipse_t lidLight = {lidCx, lidBottom - lidRy - 10.0f, lidRx, lidRy};
+    canvasFillEllipse(cv, &edge, EYE_OUTLINE, 255, 1.0f, &sclera, NULL);     // Dark line along the lid edge
+    canvasFillEllipse(cv, &lid, LID_SHADE, 255, 1.0f, &sclera, NULL);       // Lid, darker near the edge...
+    canvasFillEllipse(cv, &lidLight, LID_COLOR, 255, 10.0f, &sclera, NULL); // ...lighter above
+}
+
+static void drunkDrawEye(eye_canvas_t *cv, const eye_pose_t *pose) {
+    eye_ellipse_t bag = bagShape(pose);
+    float ow = OUTLINE_K * pose->ry;
+    float open = pose->openness < 0.0f ? 0.0f : (pose->openness > 1.0f ? 1.0f : pose->openness);
+    eye_ellipse_t outline = {pose->cx, pose->cy, pose->rx + ow, pose->ry * open + ow};
+    canvasFillEllipse(cv, &bag, BAG_COLOR, 110, 14.0f, NULL, &outline);      // Bag first, the eye covers its top
+    if (!drawEyeBody(cv, pose)) return;
+    drawVeins(cv, pose);
+    drawPupil(cv, pose);
+    drawLid(cv, pose);
+}
+
+const eye_style_t eyeStyleSphereDrunk = {
+    .name = "sphere_drunk",
+    .renderBackground = sphereBackground,  // Same ball: the renderer shares one background buffer
+    .layout = drunkLayout,
+    .bounds = drunkBounds,
+    .drawEye = drunkDrawEye,
+    .detailBounds = sphereDetailBounds,     // Wandering pupils only redraw the pupil area
+    .prepare = buildVeins,
 };

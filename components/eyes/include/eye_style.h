@@ -41,11 +41,13 @@ typedef struct eye_style {
     eye_rect_t (*detailBounds)(const eye_pose_t *pose);   // Optional: area of the pupil and glints, so a pupil-only
                                                           // change redraws just that. NULL = always redraw the whole eye
     bool blackBackground;     // Background is plain black: strips are cleared instead of copied from PSRAM (faster)
+    void (*prepare)(void);    // Optional one-time setup (maps, tables), run before the first use. NULL = none
 } eye_style_t;
 
 // Built-in styles (styles/*.c)
 extern const eye_style_t eyeStyleSphere;      // Yellow ball, one big white cartoon eye per screen (Las Vegas Sphere)
 extern const eye_style_t eyeStyleSphereFace;  // Same look, both eyes on one screen
+extern const eye_style_t eyeStyleSphereDrunk; // Sphere eye, bloodshot and droopy with wandering pupils (Halloween)
 extern const eye_style_t eyeStyleSauron;      // Flaming dark-lord eye with a slit pupil, one per screen (Halloween)
 
 #ifdef __cplusplus
