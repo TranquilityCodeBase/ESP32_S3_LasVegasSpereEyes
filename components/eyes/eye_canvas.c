@@ -5,6 +5,26 @@
 
 #include <math.h>
 
+static float trimR = 1.0f, trimG = 1.0f, trimB = 1.0f;     // Color trim gains
+
+void canvasSetColorTrim(float r, float g, float b) {
+    trimR = r;
+    trimG = g;
+    trimB = b;
+}
+
+void canvasTrim(float *r, float *g, float *b) {
+    *r = fminf(255.0f, fmaxf(0.0f, *r * trimR));              // Scale and clamp each channel
+    *g = fminf(255.0f, fmaxf(0.0f, *g * trimG));
+    *b = fminf(255.0f, fmaxf(0.0f, *b * trimB));
+}
+
+uint16_t canvasRgb565(uint32_t c) {
+    float r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+    canvasTrim(&r, &g, &b);
+    return (uint16_t)((((int)(r + 0.5f) >> 3) << 11) | (((int)(g + 0.5f) >> 2) << 5) | ((int)(b + 0.5f) >> 3));
+}
+
 // Ellipse with the values the per-pixel math needs
 typedef struct {
     float cx, cy;

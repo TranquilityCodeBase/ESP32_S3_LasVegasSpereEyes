@@ -71,6 +71,7 @@ static void sphereBackground(uint16_t *buf, int w, int h) {
             r += (((BALL_HIGHLIGHT >> 16) & 0xFF) - r) * spec;         // Blend toward the highlight color
             g += (((BALL_HIGHLIGHT >> 8) & 0xFF) - g) * spec;
             b += ((BALL_HIGHLIGHT & 0xFF) - b) * spec;
+            canvasTrim(&r, &g, &b);                                     // Per-board color match
             float d = bayer4[y & 3][x & 3] / 16.0f;                     // Dither offset 0..1
             int r5 = (int)(r / 255.0f * 31.0f + d);                     // Quantize with dither
             int g6 = (int)(g / 255.0f * 63.0f + d);
