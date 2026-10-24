@@ -19,6 +19,6 @@ idf_build_set_property(COMPILE_DEFINITIONS "APP_COLOR_TRIM_B=1.0f" APPEND)
 idf_build_set_property(COMPILE_DEFINITIONS "APP_WHITE_G=0.92f" APPEND)       # Eye white: less green...
 idf_build_set_property(COMPILE_DEFINITIONS "APP_WHITE_B=0.90f" APPEND)       # ...and less blue
 idf_build_set_property(COMPILE_DEFINITIONS "APP_GRAY_GAMMA=2.2f" APPEND)     # Lighter mid grays (lid shadow)
-idf_build_set_property(COMPILE_DEFINITIONS "APP_BACKLIGHT_PERCENT=65" APPEND) # Brighter backlight (master: 50)
+idf_build_set_property(COMPILE_DEFINITIONS "APP_BACKLIGHT_PERCENT=60" APPEND) # Brighter backlight (master: 50)
 
 project(sphere_eyes_slave)
