@@ -75,10 +75,12 @@ static const almond_look_t grinchLook = {
 #define LASH_COLOR      0x1E1410
 #define CREASE_COLOR    0x8A5444    // Warm shadow in the lid crease
 #define ROSY_COLOR      0xEE8C96    // Soft pink lower lid
-#define LASH_COUNT      40          // Fine lashes along the upper lid, a dense fringe (every other one shorter)
-#define LASH_LEN        36.0f
-#define LASH_LEAN       0.45f       // Lashes sweep toward the outer corner...
-#define LASH_CURL       0.016f      // ...curling more toward their tips
+#define LASH_COUNT      11          // Big cartoon lashes along the upper lid
+#define LASH_LEN        58.0f       // Longest (outer corner); the inner ones are about half this
+#define LASH_BASE       4.6f        // Thickness at the root, tapering to a point
+#define LASH_LEAN       0.20f       // Lashes lean toward the outer corner...
+#define LASH_CURL       0.015f      // ...and curl over more and more toward their tips
+#define LOWER_LASH_COUNT 24         // Sparse short lashes on the lower lid
 #define CREASE_GAP      24.0f       // Lid crease distance above the eye
 #define CREASE_SOFT     10.0f       // Half width of the soft crease shadow
 #define WING_LEN        34.0f       // Lash-line flick past the outer corner
@@ -91,7 +93,7 @@ static const almond_look_t elfLook = {
     .irisInner = 0xA8E4FF, .irisOuter = 0x3C8EE0, .irisRim = 0x10305E,
     .outline = 0x2A1C18,
     .lashes = true,
-    .above = 46.0f, .below = 14.0f,
+    .above = 78.0f, .below = 14.0f,
 };
 
 static iris_pic_t grinchIris, elfIris;
@@ -231,24 +233,41 @@ static void grinchBackground(uint16_t *buf, int w, int h) {
     }
 }
 
-// One lock of hair falling from the top of the screen: center line, half width, and where it ends.
-// o = position toward the outer side of the face (px from the middle), y = down from the middle.
+// Hair: clumps of fine strands falling from the top of the screen over the forehead and down past the outer
+// corner of the eye. The strands of a clump spread out at the roots and come together at the tips, which
+// gives sharp, pointed locks. o = position toward the outer side of the face (px from the middle).
 typedef struct {
-    float o0;       // Center at the top of the screen
+    float o0;       // Clump center at the top of the screen
     float sweep;    // Drift toward the outer side per px down
-    float yEnd;     // Tip
-    float halfW;    // Half width at the top
+    float yEnd;     // Tip (px from the screen middle, down = +)
+    float spread;   // Half width of the clump at the roots
     float phase;    // Wave
-} hair_lock_t;
+} hair_clump_t;
 
-static const hair_lock_t elfLocks[] = {
-    {-10.0f, 0.14f, -185.0f, 28.0f, 0.0f},      // Short lock nearest the middle...
-    {45.0f, 0.16f, -150.0f, 32.0f, 1.3f},
-    {95.0f, 0.16f, -105.0f, 34.0f, 2.1f},
-    {140.0f, 0.14f, -45.0f, 36.0f, 0.7f},       // ...longer ones framing the outer top of the eye
-    {182.0f, 0.10f, 40.0f, 36.0f, 2.8f},
+static const hair_clump_t elfClumps[] = {
+    {-90.0f, 0.08f, -185.0f, 26.0f, 0.0f},      // Short ones over the forehead toward the nose...
+    {-45.0f, 0.10f, -168.0f, 28.0f, 1.3f},
+    {0.0f, 0.13f, -148.0f, 30.0f, 2.1f},
+    {45.0f, 0.16f, -122.0f, 30.0f, 0.7f},
+    {90.0f, 0.18f, -88.0f, 32.0f, 2.8f},        // ...longer ones over the outer corner...
+    {135.0f, 0.18f, -40.0f, 32.0f, 1.9f},
+    {178.0f, 0.15f, 30.0f, 32.0f, 0.4f},        // ...and down the side of the face
+    {218.0f, 0.08f, 120.0f, 30.0f, 2.4f},
+    {250.0f, 0.02f, 200.0f, 26.0f, 1.0f},
 };
-#define ELF_LOCKS ((int)(sizeof(elfLocks) / sizeof(elfLocks[0])))
+#define ELF_CLUMPS          ((int)(sizeof(elfClumps) / sizeof(elfClumps[0])))
+#define STRANDS_PER_CLUMP   36
+#define STRAND_WIDTH        2.8f    // At the root, thinning toward the tip
+
+// Small random number 0..1 for strand i of clump c, variant v (fixed: the same hair every boot)
+static float strandRand(int c, int i, int v) {
+    return hash8(c * 97 + i * 13 + v * 7, c + v * 31 + 11) / 255.0f;
+}
+
+// Blend a 0xRRGGBB color into an RGB565 pixel, a = 0..1
+static uint16_t blendRgb(uint16_t px, float r, float g, float b, float a) {
+    return blend565(px, canvasRgb565(pack888(r, g, b)), (int)(a * 256.0f));
+}
 
 static void elfBackground(uint16_t *buf, int w, int h) {
     float outer = eyeStyleIsLeftEye ? -1.0f : 1.0f;                     // Outer side of the face is screen left on the left eye
@@ -271,47 +290,73 @@ static void elfBackground(uint16_t *buf, int w, int h) {
             g += (((ELF_DARK >> 8) & 0xFF) - g) * dark;
             b += ((ELF_DARK & 0xFF) - b) * dark;
 
-            // Brow close above the eye: thick and soft at the inner end, rising gently, then a thin tail
-            // past the outer corner. Feathered edges.
+            // Brow close above the eye, made of short hair strokes packed close together: thick at the
+            // inner end, rising gently, thinning to a tail past the outer corner. Strokes slant up and out.
             float t = (o + 150.0f) / 360.0f;                            // 0 inner end .. 1 tail
             if (t > 0.0f && t < 1.0f) {
                 float mid = -146.0f - 30.0f * sinf(t * 3.14159f * 0.9f) + 12.0f * t;   // Gentle arch
                 float half = (2.0f + 11.0f * powf(1.0f - t, 0.8f)) * clampf(t * 16.0f, 0.0f, 1.0f);
-                float cover = 0.9f * clampf((half - fabsf(ey - mid)) / 3.5f + 0.5f, 0.0f, 1.0f);   // 3.5 px feather
-                r += (((ELF_BROW >> 16) & 0xFF) - r) * cover;
-                g += (((ELF_BROW >> 8) & 0xFF) - g) * cover;
-                b += ((ELF_BROW & 0xFF) - b) * cover;
+                float v = ey - mid;
+                float p = (v + 0.45f * o) / 3.0f;                       // Stroke coordinate: one stroke per 3 px
+                int stroke = (int)floorf(p);
+                float frac = p - stroke;
+                float reach = half * (0.75f + 0.5f * hash8(stroke, 3) / 255.0f);   // Strokes end at different places
+                float edge = clampf(reach - fabsf(v) + 0.5f, 0.0f, 1.0f);
+                float line = clampf(1.0f - fabsf(frac - 0.5f) * 3.2f, 0.0f, 1.0f);  // About 2 px of hair, 1 px gap
+                float cover = edge * (0.45f + 0.55f * line);
+                float tone = 0.7f + 0.6f * hash8(stroke, 9) / 255.0f;  // Each hair a slightly different brown
+                r += (((ELF_BROW >> 16) & 0xFF) * tone - r) * cover;
+                g += (((ELF_BROW >> 8) & 0xFF) * tone - g) * cover;
+                b += ((ELF_BROW & 0xFF) * tone - b) * cover;
             }
+            buf[y * w + x] = canvasRgb565(pack888(r, g, b));
+        }
+    }
 
-            // A few smooth teal locks hanging down from the top, framing the outer top of the eye
-            for (int i = 0; i < ELF_LOCKS; i++) {
-                const hair_lock_t *lk = &elfLocks[i];
-                if (ey > lk->yEnd) continue;
-                float down = ey + 240.0f;                               // From the top of the screen
-                float tl = down / (lk->yEnd + 240.0f);                  // 0 top .. 1 tip
-                float center = lk->o0 + lk->sweep * down + 9.0f * sinf(down * 0.02f + lk->phase);
-                float half = lk->halfW * (1.0f - tl * tl * tl);         // Tapers to a point
-                float dist = o - center;
-                float cover = clampf(half - fabsf(dist) + 0.5f, 0.0f, 1.0f);
-                if (cover <= 0.0f) continue;
-                float across = dist / (half + 0.01f);                   // -1 .. 1 across the lock
-                float shine = 1.0f - across * across;                   // Rounded: lit in the middle
+    // Hair strands, row by row: each strand's center and width on this row, then a few pixels around it
+    for (int y = 0; y < h; y++) {
+        float ey = y + 0.5f - SCREEN_C, down = ey + 240.0f;             // Down from the top of the screen
+        for (int c = 0; c < ELF_CLUMPS; c++) {
+            const hair_clump_t *cl = &elfClumps[c];
+            float clumpLen = cl->yEnd + 240.0f;
+            float clumpCenter = cl->o0 + cl->sweep * down + 8.0f * sinf(down * 0.02f + cl->phase);
+            float bodyLen = clumpLen * 0.80f;                           // Dark body under the strands: hair, not skin, between them
+            if (down < bodyLen) {
+                float tb = down / bodyLen;
+                float bodyHalf = cl->spread * (1.0f - powf(tb, 1.3f)) * 0.9f;
+                float bx = SCREEN_C + clumpCenter * outer;
+                int x0 = (int)floorf(bx - bodyHalf - 1.0f), x1 = (int)ceilf(bx + bodyHalf + 1.0f);
+                for (int x = x0; x <= x1; x++) {
+                    if (x < 0 || x >= w) continue;
+                    float cover = 0.9f * clampf(bodyHalf - fabsf(x + 0.5f - bx) + 0.5f, 0.0f, 1.0f);
+                    if (cover > 0.0f) buf[y * w + x] = blendRgb(buf[y * w + x], (HAIR_DARK >> 16) & 0xFF, (HAIR_DARK >> 8) & 0xFF, HAIR_DARK & 0xFF, cover);
+                }
+            }
+            for (int i = 0; i < STRANDS_PER_CLUMP; i++) {
+                float len = clumpLen * (0.82f + 0.18f * strandRand(c, i, 0));
+                if (down > len) continue;
+                float tl = down / len;                                  // 0 root .. 1 tip
+                float spread = (strandRand(c, i, 1) * 2.0f - 1.0f) * cl->spread;
+                float conv = 1.0f - powf(tl, 1.3f);                     // Strands come together toward the tip
+                float o = clumpCenter + spread * conv + 3.0f * sinf(down * 0.045f + strandRand(c, i, 2) * 6.0f) * conv;
+                float half = 0.5f * STRAND_WIDTH * (1.0f - 0.7f * tl);
+                float sx = SCREEN_C + o * outer;                        // Screen x of the strand center
+                // Strand color: dark teal to bright, lighter toward the tip
+                float shade = strandRand(c, i, 3);
                 float hr, hg, hb;
-                mix(HAIR_DARK, HAIR_TEAL, 0.25f + 0.75f * shine, &hr, &hg, &hb);   // Darker at its edges: locks stand apart
-                float sheen = 0.5f + 0.5f * sinf(dist * 0.25f + down * 0.015f + lk->phase);   // Smooth, broad highlights
-                float hl = clampf((shine - 0.55f) * 1.4f * sheen, 0.0f, 0.6f);
-                hr += (((HAIR_LIGHT >> 16) & 0xFF) - hr) * hl;
-                hg += (((HAIR_LIGHT >> 8) & 0xFF) - hg) * hl;
-                hb += ((HAIR_LIGHT & 0xFF) - hb) * hl;
-                float tip = clampf((tl - 0.55f) * 2.2f, 0.0f, 0.75f);   // Lighter, brighter tips
+                if (shade < 0.5f) mix(HAIR_DARK, HAIR_TEAL, shade * 2.0f, &hr, &hg, &hb);
+                else mix(HAIR_TEAL, HAIR_LIGHT, (shade - 0.5f) * 1.6f, &hr, &hg, &hb);
+                float tip = clampf((tl - 0.6f) * 2.0f, 0.0f, 0.6f);
                 hr += (((HAIR_TIP >> 16) & 0xFF) - hr) * tip;
                 hg += (((HAIR_TIP >> 8) & 0xFF) - hg) * tip;
                 hb += ((HAIR_TIP & 0xFF) - hb) * tip;
-                r += (hr - r) * cover;
-                g += (hg - g) * cover;
-                b += (hb - b) * cover;
+                int x0 = (int)floorf(sx - half - 1.0f), x1 = (int)ceilf(sx + half + 1.0f);
+                for (int x = x0; x <= x1; x++) {
+                    if (x < 0 || x >= w) continue;
+                    float cover = clampf(half - fabsf(x + 0.5f - sx) + 0.5f, 0.0f, 1.0f);
+                    if (cover > 0.0f) buf[y * w + x] = blendRgb(buf[y * w + x], hr, hg, hb, cover);
+                }
             }
-            buf[y * w + x] = canvasRgb565(pack888(r, g, b));
         }
     }
 }
@@ -388,8 +433,7 @@ static void almondDraw(eye_canvas_t *cv, const eye_pose_t *pose, const almond_lo
     float lashX[LASH_COUNT], lashLen[LASH_COUNT], lashInv[LASH_COUNT];  // Where each lash leaves the lid, its length
     for (int k = 0; k < LASH_COUNT; k++) {
         lashX[k] = A * (-0.85f + k * 1.7f / (LASH_COUNT - 1));
-        lashLen[k] = LASH_LEN * (0.55f + 0.45f * clampf(1.0f - (lashX[k] * nose * invA + 0.85f) / 1.7f, 0.0f, 1.0f));   // Longer outside
-        if (k & 1) lashLen[k] *= 0.72f;                                 // Two layers: long and short
+        lashLen[k] = LASH_LEN * (0.45f + 0.55f * clampf(1.0f - (lashX[k] * nose * invA + 0.85f) / 1.7f, 0.0f, 1.0f));   // Longer outside
         lashInv[k] = 1.0f / lashLen[k];
     }
 
@@ -439,7 +483,7 @@ static void almondDraw(eye_canvas_t *cv, const eye_pose_t *pose, const almond_lo
                         int k = (int)(t + 100.5f) - 100;                  // Nearest lash (no floorf call)
                         if (k >= 0 && k < LASH_COUNT) {
                             float lx = lashX[k], len = lashLen[k];
-                            float wdt = 1.9f * (1.0f - h * lashInv[k]);
+                            float wdt = LASH_BASE * (1.0f - h * lashInv[k]);   // Thick root, sharp tip
                             float cover = clampf(wdt - fabsf(xb0 - lx) + 0.5f, 0.0f, 1.0f);
                             if (h < len && cover > 0.0f) out[px] = blend565(out[px], lash, (int)(cover * 256.0f));
                         }
@@ -461,12 +505,13 @@ static void almondDraw(eye_canvas_t *cv, const eye_pose_t *pose, const almond_lo
                     }
                     if (!topSide && y > 0.0f && h < LOWER_LASH_LEN) {   // Sparse short lower lashes, denser toward the outer corner
                         float xb0 = x + nose * LASH_LEAN * h;
-                        float t = (xb0 * invA + 0.85f) * ((LASH_COUNT - 1) / 1.7f);
+                        float t = (xb0 * invA + 0.85f) * ((LOWER_LASH_COUNT - 1) / 1.7f);
                         int k = (int)(t + 100.5f) - 100;
-                        bool outerThird = lashX[k > 0 && k < LASH_COUNT ? k : 0] * nose * invA < -0.4f;
-                        if (k >= 4 && k < LASH_COUNT - 2 && (k % 4 == 0 || (outerThird && (k & 1)))) {
+                        float lx = A * (-0.85f + k * 1.7f / (LOWER_LASH_COUNT - 1));
+                        bool outerThird = lx * nose * invA < -0.4f;
+                        if (k >= 2 && k < LOWER_LASH_COUNT - 2 && (k % 3 == 0 || (outerThird && (k & 1)))) {
                             float wdt = 1.6f * (1.0f - h * (1.0f / LOWER_LASH_LEN));
-                            float cover = clampf(wdt - fabsf(xb0 - lashX[k]) + 0.5f, 0.0f, 1.0f);
+                            float cover = clampf(wdt - fabsf(xb0 - lx) + 0.5f, 0.0f, 1.0f);
                             if (cover > 0.0f) out[px] = blend565(out[px], lash, (int)(cover * 120.0f));
                         }
                     }
