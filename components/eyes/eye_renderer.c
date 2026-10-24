@@ -104,8 +104,12 @@ static void drawStrips(int worker) {
             if ((stripNum & 1) != worker) continue;                    // The other core's strip
             int h = (rect->y1 - sy < STRIP_H) ? rect->y1 - sy : STRIP_H;
             eye_canvas_t cv = {strip, rect->x0, sy, w, h};
-            for (int y = 0; y < h; y++) {                              // Background rows into the strip
-                memcpy(strip + y * w, background + (sy + y) * disp.width + rect->x0, w * sizeof(uint16_t));
+            if (style->blackBackground) {
+                memset(strip, 0, w * h * sizeof(uint16_t));            // Plain black: no PSRAM read needed
+            } else {
+                for (int y = 0; y < h; y++) {                          // Background rows into the strip
+                    memcpy(strip + y * w, background + (sy + y) * disp.width + rect->x0, w * sizeof(uint16_t));
+                }
             }
             eye_rect_t stripRect = {rect->x0, sy, rect->x1, sy + h};
             for (int i = 0; i < job.eyeCount; i++) {                   // Eyes that reach this strip
