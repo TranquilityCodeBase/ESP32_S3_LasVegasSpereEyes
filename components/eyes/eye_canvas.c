@@ -6,15 +6,30 @@
 #include <math.h>
 
 static float trimR = 1.0f, trimG = 1.0f, trimB = 1.0f;     // Color trim gains
+static float invGamma = 1.0f;                                // 1 / gamma for grays (1 = off)
+static float whiteR = 1.0f, whiteG = 1.0f, whiteB = 1.0f;  // White balance gains for grays and white
 
-void canvasSetColorTrim(float r, float g, float b) {
+void canvasSetWhiteBalance(float r, float g, float b) {
+    whiteR = r;
+    whiteG = g;
+    whiteB = b;
+}
+
+void canvasSetColorTrim(float r, float g, float b, float grayGamma) {
     trimR = r;
     trimG = g;
     trimB = b;
+    invGamma = grayGamma > 0.0f ? 1.0f / grayGamma : 1.0f;
 }
 
-// The trim is weighted by saturation: strong colors (the yellow ball) get the full trim, while
-// whites, grays and black stay untouched, so the eye white doesn't pick up a tint.
+// Brighten (gamma > 1) or darken mid grays; black and white stay put
+static inline float grayCurve(float c) {
+    return 255.0f * powf(c / 255.0f, invGamma);
+}
+
+// The gains are weighted by saturation: strong colors (the yellow ball) get the full trim, while
+// whites, grays and black stay untouched, so the eye white doesn't pick up a tint. The gray curve is the
+// opposite: it only touches grays, for screens that show mid grays darker.
 void canvasTrim(float *r, float *g, float *b) {
     float hi = fmaxf(*r, fmaxf(*g, *b));
     float lo = fminf(*r, fminf(*g, *b));
@@ -22,6 +37,16 @@ void canvasTrim(float *r, float *g, float *b) {
     *r = fminf(255.0f, fmaxf(0.0f, *r * (1.0f + (trimR - 1.0f) * sat)));   // Scale and clamp each channel
     *g = fminf(255.0f, fmaxf(0.0f, *g * (1.0f + (trimG - 1.0f) * sat)));
     *b = fminf(255.0f, fmaxf(0.0f, *b * (1.0f + (trimB - 1.0f) * sat)));
+    if (invGamma != 1.0f) {                                     // Gray curve, also weighted: grays only
+        float w = 1.0f - sat;
+        *r += (grayCurve(*r) - *r) * w;
+        *g += (grayCurve(*g) - *g) * w;
+        *b += (grayCurve(*b) - *b) * w;
+    }
+    float w = 1.0f - sat;                                       // White balance: grays and white only
+    *r = fminf(255.0f, *r * (1.0f + (whiteR - 1.0f) * w));
+    *g = fminf(255.0f, *g * (1.0f + (whiteG - 1.0f) * w));
+    *b = fminf(255.0f, *b * (1.0f + (whiteB - 1.0f) * w));
 }
 
 uint16_t canvasRgb565(uint32_t c) {

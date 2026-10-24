@@ -34,9 +34,13 @@ void canvasFillEllipse(eye_canvas_t *cv, const eye_ellipse_t *shape, uint32_t co
 // Bounding box of an ellipse grown by margin px
 eye_rect_t canvasEllipseBounds(const eye_ellipse_t *e, float margin);
 
-// Per-board color trim: gains for red, green, blue (1.0 = unchanged). Screens vary from batch to batch,
+// Per-board color trim: gains for red, green, blue on strong colors, and a gamma for grays
+// (all 1.0 = unchanged; gamma > 1 lightens mid grays). Screens vary from batch to batch,
 // so each board can be nudged to match the other. Set before the first draw.
-void canvasSetColorTrim(float r, float g, float b);
+void canvasSetColorTrim(float r, float g, float b, float grayGamma);
+
+// Per-board white balance: red, green, blue gains for grays and white only (1.0 = unchanged)
+void canvasSetWhiteBalance(float r, float g, float b);
 
 // Apply the trim to one color, channels 0..255 as floats (result clamped to 0..255)
 void canvasTrim(float *r, float *g, float *b);

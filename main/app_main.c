@@ -81,7 +81,8 @@ static void renderTask(void *arg) {
         .backBuffer = boardDisplayBackBuffer,
         .flip = boardDisplayFlip,
     };
-    canvasSetColorTrim(APP_COLOR_TRIM_R, APP_COLOR_TRIM_G, APP_COLOR_TRIM_B);   // Match this screen to the other one
+    canvasSetColorTrim(APP_COLOR_TRIM_R, APP_COLOR_TRIM_G, APP_COLOR_TRIM_B, APP_GRAY_GAMMA);   // Match this screen to the other one
+    canvasSetWhiteBalance(APP_WHITE_R, APP_WHITE_G, APP_WHITE_B);
     ESP_ERROR_CHECK(eyeRendererInit(&display, &eyeStyleSphere));
 
     const TickType_t framePeriod = pdMS_TO_TICKS(1000 / APP_TARGET_FPS);

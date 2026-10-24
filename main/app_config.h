@@ -22,6 +22,18 @@
 #ifndef APP_COLOR_TRIM_B
 #define APP_COLOR_TRIM_B        1.0f
 #endif
+#ifndef APP_WHITE_R                         // White balance for grays and white (1.0 = unchanged)
+#define APP_WHITE_R             1.0f
+#endif
+#ifndef APP_WHITE_G
+#define APP_WHITE_G             1.0f
+#endif
+#ifndef APP_WHITE_B
+#define APP_WHITE_B             1.0f
+#endif
+#ifndef APP_GRAY_GAMMA
+#define APP_GRAY_GAMMA          1.0f        // > 1 lightens mid grays (eye white shading)
+#endif
 
 // ---------- Rendering ----------
 #define APP_TARGET_FPS          30          // Animation frame rate (panel refreshes at about 64 Hz)
