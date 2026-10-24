@@ -4,6 +4,9 @@
 #include "eye_canvas.h"
 
 #include <math.h>
+#include <stdbool.h>
+
+bool eyeStyleIsLeftEye = true;                               // See eye_style.h
 
 static float trimR = 1.0f, trimG = 1.0f, trimB = 1.0f;     // Color trim gains
 static float invGamma = 1.0f;                                // 1 / gamma for grays (1 = off)

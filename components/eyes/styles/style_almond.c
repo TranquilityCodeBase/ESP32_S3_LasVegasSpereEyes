@@ -1,0 +1,456 @@
+// style_almond.c - Wide almond-shaped eyes (side to side, not up and down), with a moving iris.
+// The white is capped at 3/4 of the screen width. The whole eye shifts a little with the gaze and the iris
+// does the rest, reaching the corner of the white at full gaze. Blinks close the lids over the iris.
+// Two looks share this code:
+//   eyeStyleGrinch - lime-yellow white, green iris, scowling lid slanting down to the nose, shaggy fur and brow
+//   eyeStyleElf    - pale blue-white, luminous blue iris, long dark lashes, rosy lower lid, porcelain skin
+// All drawn in code. The iris (with pupil and glints) is drawn once into a small picture, then placed each frame.
+#include "eye_style.h"
+
+#include <math.h>
+#include <stdlib.h>
+
+// ---------- Shared geometry (480x480 screen) ----------
+#define SCREEN_C        240.0f      // Screen center
+#define ALMOND_A        180.0f      // Half width of the white: 360 px = 3/4 of the screen
+#define SHIFT_X         30.0f       // How far the whole eye shifts at full gaze...
+#define SHIFT_Y         12.0f
+#define EDGE_GAP        10.0f       // ...the iris covers the rest, stopping this far from the corner
+#define TRAVEL_Y_K      0.25f       // Iris up/down travel (x half height)
+#define TOP_SHADOW      16.0f       // Soft shadow the upper lid casts on the eye, px
+
+// One look: shape and colors
+typedef struct {
+    float b;                        // Half height of the white
+    float irisR;                    // Iris radius
+    float pupilRx, pupilRy;         // Pupil radii (x irisR)
+    float outlineTop, outlineBottom;// Outline thickness along the top and bottom edge
+    uint32_t sclera, scleraShade;   // White: lower part, upper part
+    uint32_t irisInner, irisOuter, irisRim;   // Iris: middle, outer, dark ring at the edge
+    uint32_t outline;
+    bool scowl;                     // Grinch: slanted angry lid and furry brow
+    bool lashes;                    // Elf: lashes, lid crease, rosy lower lid
+    float above, below;             // How far the drawing reaches above and below the white (brow, lashes, lids)
+} almond_look_t;
+
+// Iris picture, drawn once per look
+typedef struct {
+    uint16_t *color;                // (2R+1) x (2R+1) RGB565
+    uint8_t *alpha;                 // Coverage 0..255 (round edge)
+    int r;                          // Radius in px (picture size 2r+1)
+} iris_pic_t;
+
+// ---------- Grinch ----------
+#define FUR_GREEN       0x5E9E2E    // Fur
+#define FUR_DARK        0x2F5C17
+#define FUR_LIGHT       0x8CC24A
+#define LID_LINE        0x14200A    // Heavy dark line along the lid edge
+#define BROW_COLOR      0x2C5414    // Furrowed brow
+
+static const almond_look_t grinchLook = {
+    .b = 92.0f, .irisR = 66.0f, .pupilRx = 0.20f, .pupilRy = 0.42f,
+    .outlineTop = 5.0f, .outlineBottom = 4.0f,
+    .sclera = 0xE2E05A, .scleraShade = 0xA9A72E,
+    .irisInner = 0xB4F05A, .irisOuter = 0x52B02C, .irisRim = 0x1F4A12,
+    .outline = 0x1A260C,
+    .scowl = true,
+    .above = 60.0f, .below = 10.0f,
+};
+
+// ---------- Elf ----------
+#define SKIN_LIGHT      0xFBE0CC    // Warm peach skin
+#define SKIN_SHADE      0xE8BCA2
+#define HAIR_TEAL       0x2FA89A    // Sea-green hair down the outer side of the face
+#define HAIR_DARK       0x17675E
+#define HAIR_LIGHT      0x6FD8C8
+#define ELF_BROW        0x4A2E1E    // Dark brown, softly arched brow
+#define LASH_COLOR      0x1E1410
+#define CREASE_COLOR    0xB88C78
+#define ROSY_COLOR      0xEE8C96    // Soft pink lower lid
+#define LASH_COUNT      15          // Lashes along the upper lid
+#define LASH_LEN        30.0f
+#define LASH_LEAN       0.55f       // Lashes sweep toward the outer corner
+#define CREASE_GAP      22.0f       // Lid crease distance above the eye
+#define LOWER_LASH_LEN  10.0f       // Short lashes on the lower lid
+
+static const almond_look_t elfLook = {
+    .b = 100.0f, .irisR = 74.0f, .pupilRx = 0.30f, .pupilRy = 0.30f,
+    .outlineTop = 6.0f, .outlineBottom = 2.0f,
+    .sclera = 0xF4F8FF, .scleraShade = 0xBCC8E0,
+    .irisInner = 0xA8E4FF, .irisOuter = 0x3C8EE0, .irisRim = 0x10305E,
+    .outline = 0x2A1C18,
+    .lashes = true,
+    .above = 40.0f, .below = 14.0f,
+};
+
+static iris_pic_t grinchIris, elfIris;
+
+static float clampf(float v, float lo, float hi) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+static uint8_t hash8(int x, int y) {
+    uint32_t h = (uint32_t)x * 374761393u + (uint32_t)y * 668265263u;
+    h = (h ^ (h >> 13)) * 1274126177u;
+    return (uint8_t)(h >> 24);
+}
+
+// Smooth value noise, cells cw x ch px, 0..255
+static float valueNoise(float x, float y, float cw, float ch) {
+    float fx = x / cw, fy = y / ch;
+    int gx = (int)floorf(fx), gy = (int)floorf(fy);
+    fx -= gx;
+    fy -= gy;
+    fx = fx * fx * (3.0f - 2.0f * fx);
+    fy = fy * fy * (3.0f - 2.0f * fy);
+    float a = hash8(gx, gy), b = hash8(gx + 1, gy), c = hash8(gx, gy + 1), d = hash8(gx + 1, gy + 1);
+    return a + (b - a) * fx + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fy;
+}
+
+static void mix(uint32_t a, uint32_t b, float t, float *r, float *g, float *bl) {
+    t = clampf(t, 0.0f, 1.0f);
+    *r = ((a >> 16) & 0xFF) * (1.0f - t) + ((b >> 16) & 0xFF) * t;
+    *g = ((a >> 8) & 0xFF) * (1.0f - t) + ((b >> 8) & 0xFF) * t;
+    *bl = (a & 0xFF) * (1.0f - t) + (b & 0xFF) * t;
+}
+
+static uint32_t pack888(float r, float g, float b) {
+    return ((uint32_t)clampf(r, 0, 255) << 16) | ((uint32_t)clampf(g, 0, 255) << 8) | (uint32_t)clampf(b, 0, 255);
+}
+
+// Mix an RGB565 pixel toward another, a = 0..256
+static inline uint16_t blend565(uint16_t px, uint16_t c, int a) {
+    int r = px >> 11, g = (px >> 5) & 63, b = px & 31;
+    r += (((c >> 11) - r) * a) >> 8;
+    g += ((((c >> 5) & 63) - g) * a) >> 8;
+    b += (((c & 31) - b) * a) >> 8;
+    return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+// ---------- Iris picture ----------
+
+static void buildIris(iris_pic_t *pic, const almond_look_t *look) {
+    if (pic->color != NULL) return;
+    int r = (int)look->irisR, n = 2 * r + 1;
+    pic->r = r;
+    pic->color = malloc((size_t)n * n * sizeof(uint16_t));
+    pic->alpha = malloc((size_t)n * n);
+    if (pic->color == NULL || pic->alpha == NULL) {                     // Out of memory: no iris
+        free(pic->color);
+        free(pic->alpha);
+        pic->color = NULL;
+        return;
+    }
+    float R = look->irisR, prx = look->pupilRx * R, pry = look->pupilRy * R;
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            float u = x - r, v = y - r;
+            float d = sqrtf(u * u + v * v), q = d / R;
+            float ang = atan2f(v, u);
+            float red, grn, blu;
+            mix(look->irisInner, look->irisOuter, powf(q, 1.2f), &red, &grn, &blu);   // Bright middle, deeper outside
+            float fibers = 0.5f + 0.5f * sinf(ang * 29.0f + 2.0f * sinf(ang * 7.0f));   // Streaks out from the pupil
+            float k = 1.0f + (fibers - 0.5f) * 0.32f * clampf((q - 0.25f) / 0.2f, 0.0f, 1.0f);
+            red *= k;
+            grn *= k;
+            blu *= k;
+            float rim = clampf((q - 0.80f) / 0.20f, 0.0f, 1.0f);       // Dark ring at the edge
+            red += (((look->irisRim >> 16) & 0xFF) - red) * rim;
+            grn += (((look->irisRim >> 8) & 0xFF) - grn) * rim;
+            blu += ((look->irisRim & 0xFF) - blu) * rim;
+            // Pupil, anti-aliased by its approximate distance in px
+            float e = sqrtf((u / prx) * (u / prx) + (v / pry) * (v / pry));
+            float pupilCover = clampf((1.0f - e) * fminf(prx, pry) + 0.5f, 0.0f, 1.0f);
+            red *= 1.0f - pupilCover * 0.94f;
+            grn *= 1.0f - pupilCover * 0.94f;
+            blu *= 1.0f - pupilCover * 0.94f;
+            // Glints: a big one upper left, a small one lower right
+            float gx = u + 0.36f * R, gy = v + 0.36f * R, gr = 0.15f * R;
+            float glint = clampf(gr - sqrtf(gx * gx + gy * gy) + 0.5f, 0.0f, 1.0f);
+            float sx = u - 0.30f * R, sy = v - 0.26f * R, sr = 0.06f * R;
+            glint = fmaxf(glint, 0.8f * clampf(sr - sqrtf(sx * sx + sy * sy) + 0.5f, 0.0f, 1.0f));
+            red += (255.0f - red) * glint;
+            grn += (255.0f - grn) * glint;
+            blu += (255.0f - blu) * glint;
+            pic->color[y * n + x] = canvasRgb565(pack888(red, grn, blu));
+            pic->alpha[y * n + x] = (uint8_t)(255.0f * clampf(R - d + 0.5f, 0.0f, 1.0f));
+        }
+    }
+}
+
+// ---------- Backgrounds ----------
+// These depend on the side (brows slant toward the nose, hair hangs on the outer side): eyeStyleIsLeftEye.
+
+// Grinch's furrowed brow: a thick band slanting down toward the nose, ragged and tapered (eye-local, eye at rest)
+static bool inBrow(const almond_look_t *look, int px, float y, float xn) {
+    if (y >= 0.0f || xn <= -1.2f || xn >= 1.0f) return false;
+    float browBottom = look->b * (-1.10f + 0.50f * (xn + 1.0f)) - 12.0f;
+    float thick = (24.0f + 5.0f * (xn + 1.0f)) * clampf((1.0f - xn) * (1.0f / 0.35f), 0.0f, 1.0f) * clampf((xn + 1.2f) * (1.0f / 0.3f), 0.0f, 1.0f);
+    float rag = hash8(px / 3, 7) * (8.0f / 255.0f) - 4.0f;
+    return y < browBottom + rag && y > browBottom - thick + rag;
+}
+
+
+static void grinchBackground(uint16_t *buf, int w, int h) {
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            // Shaggy fur: noise stretched tall (strands), plus a fine layer, darker toward the rim
+            float strands = valueNoise(x + 0.35f * y, y, 4.0f, 22.0f) / 255.0f;
+            float fine = valueNoise(x - 0.2f * y, y, 2.0f, 9.0f) / 255.0f;
+            float f = 0.6f * strands + 0.4f * fine;
+            float dx = (x - SCREEN_C) / SCREEN_C, dy = (y - SCREEN_C) / SCREEN_C;
+            float rim = clampf(dx * dx + dy * dy, 0.0f, 1.0f);
+            float r, g, b;
+            if (f < 0.5f) mix(FUR_DARK, FUR_GREEN, f * 2.0f, &r, &g, &b);
+            else mix(FUR_GREEN, FUR_LIGHT, (f - 0.5f) * 2.0f, &r, &g, &b);
+            r *= 1.0f - 0.35f * rim;
+            g *= 1.0f - 0.35f * rim;
+            b *= 1.0f - 0.35f * rim;
+            float ex = x + 0.5f - SCREEN_C, ey = y + 0.5f - SCREEN_C;   // Furrowed brow, fixed above the eye
+            if (inBrow(&grinchLook, x, ey, ex / ALMOND_A * (eyeStyleIsLeftEye ? 1.0f : -1.0f))) {
+                float k = (0.55f + 0.25f * f) * 1.6f;                   // Still a little furry
+                r = ((BROW_COLOR >> 16) & 0xFF) * k;
+                g = ((BROW_COLOR >> 8) & 0xFF) * k;
+                b = (BROW_COLOR & 0xFF) * k;
+            }
+            buf[y * w + x] = canvasRgb565(pack888(r, g, b));
+        }
+    }
+}
+
+static void elfBackground(uint16_t *buf, int w, int h) {
+    float outer = eyeStyleIsLeftEye ? -1.0f : 1.0f;                     // Outer side of the face is screen left on the left eye
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            float dx = (x - SCREEN_C) / SCREEN_C, dy = (y - SCREEN_C * 0.9f) / SCREEN_C;
+            float r, g, b;
+            mix(SKIN_LIGHT, SKIN_SHADE, clampf(dx * dx + dy * dy, 0.0f, 1.0f), &r, &g, &b);   // Soft shading toward the rim
+            float ex = x + 0.5f - SCREEN_C, ey = y + 0.5f - SCREEN_C;
+            // Soft arched brow well above the eye, highest a little toward the outer side, tapering at both ends
+            float u = (ex * outer - 20.0f) / 175.0f;                    // -1 .. 1 along the brow
+            if (u > -1.0f && u < 1.0f) {
+                float mid = -168.0f + 38.0f * u * u - 6.0f * u;         // Brow center line
+                float half = 8.0f * (1.0f - u * u) + 1.0f;              // Half thickness
+                float cover = 0.92f * clampf(half - fabsf(ey - mid) + 0.5f, 0.0f, 1.0f);
+                r += (((ELF_BROW >> 16) & 0xFF) - r) * cover;
+                g += (((ELF_BROW >> 8) & 0xFF) - g) * cover;
+                b += ((ELF_BROW & 0xFF) - b) * cover;
+            }
+            // Sea-green hair in soft locks down the outer side of the face
+            float side = ex * outer;                                    // Distance toward the outer side
+            float edge = 196.0f + 10.0f * sinf(ey * 0.035f) + 5.0f * sinf(ey * 0.09f + 1.0f) - 0.08f * ey;   // Wavy hairline
+            if (side > edge - 1.0f) {
+                float strand = 0.5f + 0.32f * sinf(side * 0.30f + 3.0f * sinf(ey * 0.02f)) + 0.12f * sinf(side * 0.9f + ey * 0.05f);   // Soft locks
+                float hr, hg, hb;
+                if (strand < 0.5f) mix(HAIR_DARK, HAIR_TEAL, strand * 2.0f, &hr, &hg, &hb);
+                else mix(HAIR_TEAL, HAIR_LIGHT, (strand - 0.5f) * 2.0f, &hr, &hg, &hb);
+                float cover = clampf(side - edge + 1.0f, 0.0f, 1.0f);
+                r += (hr - r) * cover;
+                g += (hg - g) * cover;
+                b += (hb - b) * cover;
+            }
+            buf[y * w + x] = canvasRgb565(pack888(r, g, b));
+        }
+    }
+}
+
+static void grinchPrepare(void) { buildIris(&grinchIris, &grinchLook); }
+static void elfPrepare(void) { buildIris(&elfIris, &elfLook); }
+
+// ---------- Layout ----------
+
+// Small gaze changes move only the iris; the eye starts shifting past this
+static float deadZone(float g) {
+    const float dz = 0.08f;
+    if (g > dz) return (g - dz) / (1.0f - dz);
+    if (g < -dz) return (g + dz) / (1.0f - dz);
+    return 0.0f;
+}
+
+static int almondLayout(const face_state_t *face, eye_pose_t *poses, int maxPoses, const almond_look_t *look) {
+    if (maxPoses < 1) return 0;
+    eye_pose_t *p = &poses[0];
+    p->isLeft = face->isLeftEye;
+    p->cx = SCREEN_C + deadZone(face->gazeX) * SHIFT_X;
+    p->cy = SCREEN_C + deadZone(face->gazeY) * SHIFT_Y;
+    p->rx = ALMOND_A;
+    p->ry = look->b;
+    p->openness = p->isLeft ? face->openLeft : face->openRight;
+    p->pupilScale = face->pupilScale;
+    p->pupilDx = face->gazeX * (ALMOND_A - look->irisR - EDGE_GAP);    // Iris reaches the corner at full gaze
+    p->pupilDy = face->gazeY * TRAVEL_Y_K * look->b;
+    p->timeMs = face->timeMs;
+    return 1;
+}
+
+static int grinchLayout(const face_state_t *f, eye_pose_t *p, int n) { return almondLayout(f, p, n, &grinchLook); }
+static int elfLayout(const face_state_t *f, eye_pose_t *p, int n) { return almondLayout(f, p, n, &elfLook); }
+
+// Kept tight: when the eye shifts, everything in here is redrawn
+static eye_rect_t almondBounds(const eye_pose_t *pose, const almond_look_t *look) {
+    return (eye_rect_t){(int)floorf(pose->cx - ALMOND_A - 12.0f), (int)floorf(pose->cy - pose->ry - look->above),
+                        (int)ceilf(pose->cx + ALMOND_A + 12.0f), (int)ceilf(pose->cy + pose->ry + look->below)};
+}
+
+static eye_rect_t grinchBounds(const eye_pose_t *pose) { return almondBounds(pose, &grinchLook); }
+static eye_rect_t elfBounds(const eye_pose_t *pose) { return almondBounds(pose, &elfLook); }
+
+static eye_rect_t irisBounds(const eye_pose_t *pose) {
+    const float r = 80.0f;                                              // Largest iris + edge
+    float x = pose->cx + pose->pupilDx, y = pose->cy + pose->pupilDy;
+    return (eye_rect_t){(int)floorf(x - r), (int)floorf(y - r), (int)ceilf(x + r), (int)ceilf(y + r)};
+}
+
+// ---------- Drawing ----------
+
+// Draw one almond eye. The almond is where two big circles overlap; each pixel gets its distance to the
+// upper and lower edge (cheap form, exact near the edge), which drives the outline, shading and extras.
+static void almondDraw(eye_canvas_t *cv, const eye_pose_t *pose, const almond_look_t *look, const iris_pic_t *iris) {
+    const float A = ALMOND_A;
+    float open = clampf(pose->openness, 0.0f, 1.0f);
+    float B = fmaxf(1.5f, pose->ry * open);                             // Lids close toward the middle line
+    float d = (A * A - B * B) / (2.0f * B), R = B + d, inv2R = 0.5f / R;
+    float nose = pose->isLeft ? 1.0f : -1.0f;                           // +x points to the nose on the left eye
+    uint16_t outline = canvasRgb565(look->outline);
+    uint16_t sclera = canvasRgb565(look->sclera), shade = canvasRgb565(look->scleraShade);
+    uint16_t lidLine = canvasRgb565(LID_LINE);
+    uint16_t lash = canvasRgb565(LASH_COLOR), crease = canvasRgb565(CREASE_COLOR), rosy = canvasRgb565(ROSY_COLOR);
+    float ix0 = pose->cx + pose->pupilDx, iy0 = pose->cy + pose->pupilDy;   // Iris center
+    int ir = iris->color ? iris->r : -1, in = 2 * ir + 1;
+    const float invA = 1.0f / A;
+    // How far past the almond each row needs per-pixel work (outline, lashes, rosy lid); the rest is left alone
+    float reachTop = look->outlineTop + 2.0f + (look->lashes ? LASH_LEN : 0.0f);
+    float reachBot = look->outlineBottom + 2.0f + (look->lashes ? LOWER_LASH_LEN : 0.0f);
+    const float invShadow = 1.0f / TOP_SHADOW, invCrease = 1.0f / (0.7f * A);   // Per-pixel math uses no divides:
+                                                                        // the ESP32-S3 FPU has none, so they are slow calls
+    float lashX[LASH_COUNT], lashLen[LASH_COUNT], lashInv[LASH_COUNT];  // Where each lash leaves the lid, its length
+    for (int k = 0; k < LASH_COUNT; k++) {
+        lashX[k] = A * (-0.85f + k * 1.7f / (LASH_COUNT - 1));
+        lashLen[k] = LASH_LEN * (0.55f + 0.45f * clampf(1.0f - (lashX[k] * nose * invA + 0.85f) / 1.7f, 0.0f, 1.0f));   // Longer outside
+        lashInv[k] = 1.0f / lashLen[k];
+    }
+
+    int xa = cv->x0, xb = cv->x0 + cv->w;
+    for (int py = cv->y0; py < cv->y0 + cv->h; py++) {
+        float y = py + 0.5f - pose->cy;
+        float upper = (y - d) * (y - d), lower = (y + d) * (y + d);
+        uint16_t *out = cv->buf + (py - cv->y0) * cv->w - cv->x0;
+
+        // Columns of this row near the almond: inside the circle grown by the reach
+        float reach = R + (y < 0.0f ? reachTop : reachBot);
+        float arg = reach * reach - (y < 0.0f ? upper : lower);
+        int xLo = xb, xHi = xb;                                         // Empty unless the row meets the eye
+        if (arg > 0.0f) {
+            float half = sqrtf(arg);
+            xLo = (int)floorf(pose->cx - half);
+            xHi = (int)ceilf(pose->cx + half);
+            if (xLo < xa) xLo = xa;
+            if (xHi > xb) xHi = xb;
+            if (xLo > xHi) xLo = xHi;
+        }
+        if (xLo >= xHi) continue;
+        // Shading of the white for this row: darker up under the lid
+        int shadeA = (int)(256.0f * clampf(0.75f - (y + B) / (2.0f * B) * 1.1f, 0.0f, 0.75f));
+        uint16_t whiteRow = blend565(sclera, shade, shadeA);
+        int iy = (int)floorf(py + 0.5f - iy0) + ir;                      // Iris picture row
+        int ixOff = (int)floorf(0.5f - ix0) + ir;                       // Iris picture column = px + ixOff
+        for (int px = xLo; px < xHi; px++) {
+            float x = px + 0.5f - pose->cx;
+            float x2 = x * x;
+            float dTop = (x2 + upper - R * R) * inv2R;                  // Distance to the upper edge (>0 = above it)
+            float dBot = (x2 + lower - R * R) * inv2R;                  // Distance to the lower edge (>0 = below it)
+            bool topSide = dTop > dBot;
+            float s = topSide ? dTop : dBot;                            // Distance to the almond (>0 = outside)
+            float ow = topSide ? look->outlineTop : look->outlineBottom;
+            float xn = clampf(x * invA, -1.5f, 1.5f) * nose;               // -1 outer corner .. +1 nose corner
+
+            if (s > ow + 1.0f) {
+                // Outside the eye: extras on the skin or fur
+                if (look->lashes) {
+                    float h = s - ow;                                   // Height above the outline
+                    if (topSide && y < 0.0f && h < LASH_LEN) {
+                        // Lashes: thin strokes along the lid, leaning toward the outer corner, tapering
+                        float xb0 = x + nose * LASH_LEAN * h;           // Where this point's lash leaves the lid
+                        float t = (xb0 * invA + 0.85f) * ((LASH_COUNT - 1) / 1.7f);
+                        int k = (int)(t + 100.5f) - 100;                  // Nearest lash (no floorf call)
+                        if (k >= 0 && k < LASH_COUNT) {
+                            float lx = lashX[k], len = lashLen[k];
+                            float wdt = 2.2f * (1.0f - h * lashInv[k]);
+                            float cover = clampf(wdt - fabsf(xb0 - lx) + 0.5f, 0.0f, 1.0f);
+                            if (h < len && cover > 0.0f) out[px] = blend565(out[px], lash, (int)(cover * 256.0f));
+                        }
+                    }
+                    if (topSide && y < 0.0f && fabsf(h - CREASE_GAP) < 2.0f && fabsf(x) < 0.7f * A) {   // Lid crease
+                        float a = (1.0f - fabsf(h - CREASE_GAP) * 0.5f) * (1.0f - fabsf(x) * invCrease);
+                        out[px] = blend565(out[px], crease, (int)(a * 200.0f));
+                    }
+                    if (!topSide && y > 0.0f && h < 9.0f) {             // Rosy lower lid
+                        out[px] = blend565(out[px], rosy, (int)((1.0f - h * (1.0f / 9.0f)) * 150.0f));
+                    }
+                    if (!topSide && y > 0.0f && h < LOWER_LASH_LEN) {   // Short, faint lower lashes, every other one
+                        float xb0 = x + nose * LASH_LEAN * h;
+                        float t = (xb0 * invA + 0.85f) * ((LASH_COUNT - 1) / 1.7f);
+                        int k = (int)(t + 100.5f) - 100;
+                        if (k >= 2 && k < LASH_COUNT - 1 && (k & 1)) {
+                            float wdt = 1.6f * (1.0f - h * (1.0f / LOWER_LASH_LEN));
+                            float cover = clampf(wdt - fabsf(xb0 - lashX[k]) + 0.5f, 0.0f, 1.0f);
+                            if (cover > 0.0f) out[px] = blend565(out[px], lash, (int)(cover * 120.0f));
+                        }
+                    }
+                }
+                continue;
+            }
+
+            uint16_t c;
+            if (s >= 0.0f) {
+                c = outline;                                            // Outline band
+            } else {
+                c = whiteRow;
+                if (ir >= 0) {                                          // Iris, where it overlaps
+                    int ix = px + ixOff;
+                    if (ix >= 0 && ix < in && iy >= 0 && iy < in) {
+                        int a = iris->alpha[iy * in + ix];
+                        if (a) c = blend565(c, iris->color[iy * in + ix], a + (a >> 7));
+                    }
+                }
+                if (dTop > -TOP_SHADOW) c = blend565(c, outline, (int)(90.0f * (1.0f + dTop * invShadow)));   // Lid shadow
+                if (s > -1.0f) c = blend565(c, outline, (int)((s + 1.0f) * 256.0f));   // Smooth inner edge
+            }
+            if (look->scowl) {
+                // Scowling lid: everything above a line slanting down toward the nose is lid fur
+                float lidY = B * (-0.85f + 0.50f * (xn + 1.0f));
+                if (y < lidY - 3.0f) continue;                          // The lid is the face's own fur (and brow)
+                if (y < lidY + 3.0f) {
+                    c = lidLine;                                        // Heavy line along the lid edge
+                } else if (s < 0.0f && y < lidY + 3.0f + TOP_SHADOW) {
+                    c = blend565(c, outline, (int)(110.0f * (1.0f - (y - lidY - 3.0f) * invShadow)));   // Lid shadow
+                }
+            }
+            float edge = clampf(ow + 1.0f - s, 0.0f, 1.0f);             // Anti-aliased outer edge of the outline
+            out[px] = edge >= 1.0f ? c : blend565(out[px], c, (int)(edge * 256.0f));
+        }
+    }
+}
+
+static void grinchDraw(eye_canvas_t *cv, const eye_pose_t *pose) { almondDraw(cv, pose, &grinchLook, &grinchIris); }
+static void elfDraw(eye_canvas_t *cv, const eye_pose_t *pose) { almondDraw(cv, pose, &elfLook, &elfIris); }
+
+const eye_style_t eyeStyleGrinch = {
+    .name = "grinch",
+    .renderBackground = grinchBackground,
+    .layout = grinchLayout,
+    .bounds = grinchBounds,
+    .drawEye = grinchDraw,
+    .detailBounds = irisBounds,
+    .prepare = grinchPrepare,
+};
+
+const eye_style_t eyeStyleElf = {
+    .name = "elf",
+    .renderBackground = elfBackground,
+    .layout = elfLayout,
+    .bounds = elfBounds,
+    .drawEye = elfDraw,
+    .detailBounds = irisBounds,
+    .prepare = elfPrepare,
+};

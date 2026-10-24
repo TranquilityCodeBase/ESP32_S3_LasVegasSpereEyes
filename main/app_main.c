@@ -36,6 +36,8 @@ static const eye_style_t *const stylePlaylist[] = {
     &eyeStyleSphere,        // Las Vegas Sphere cartoon eye
     &eyeStyleSauron,        // Flaming dark-lord eye
     &eyeStyleSphereDrunk,   // Bloodshot, droopy Sphere eye
+    &eyeStyleGrinch,        // Scowling green Grinch-style eye
+    &eyeStyleElf,           // Calm blue elf eye with long lashes
 };
 #define STYLE_COUNT ((int)(sizeof(stylePlaylist) / sizeof(stylePlaylist[0])))
 
@@ -140,6 +142,7 @@ static void renderTask(void *arg) {
     };
     canvasSetColorTrim(APP_COLOR_TRIM_R, APP_COLOR_TRIM_G, APP_COLOR_TRIM_B, APP_GRAY_GAMMA);   // Match this screen to the other one
     canvasSetWhiteBalance(APP_WHITE_R, APP_WHITE_G, APP_WHITE_B);
+    eyeStyleIsLeftEye = APP_EYE_IS_LEFT;                                 // Some backgrounds differ per side
     ESP_ERROR_CHECK(eyeRendererInit(&display, stylePlaylist[0]));
     for (int i = 1; i < STYLE_COUNT; i++) eyeRendererPrepare(stylePlaylist[i]);   // Draw every background now, so switches are instant
     styleStartMs = nowMs();
@@ -148,6 +151,7 @@ static void renderTask(void *arg) {
     TickType_t lastWake = xTaskGetTickCount();
     uint32_t fpsStartMs = nowMs();
     int frames = 0;
+    int statsStyle = styleIndex;                                        // Design the frame rate is being measured for
     face_state_t face;
     while (true) {
         styleStep();                                                    // Time for the next design?
@@ -158,11 +162,18 @@ static void renderTask(void *arg) {
 #if APP_DEBUG_FRAME_DUMP
         if (frames % (APP_TARGET_FPS * 3) == 0) dumpFrame(&face);       // Every 3 s
 #endif
+        if (styleIndex != statsStyle) {                                 // New design: start measuring afresh
+            uint32_t unused[3];
+            eyeRendererStats(&unused[0], &unused[1], &unused[2]);
+            frames = 0;
+            fpsStartMs = nowMs();
+            statsStyle = styleIndex;
+        }
         if (++frames == APP_TARGET_FPS * 10) {                          // Frame rate in the log every 10 s
             uint32_t elapsed = nowMs() - fpsStartMs;
             uint32_t drawUs, flipUs, drawMaxUs;
             eyeRendererStats(&drawUs, &flipUs, &drawMaxUs);
-            ESP_LOGI(TAG, "%.1f fps, draw %lu us (max %lu), flip wait %lu us", frames * 1000.0f / elapsed,
+            ESP_LOGI(TAG, "%s: %.1f fps, draw %lu us (max %lu), flip wait %lu us", stylePlaylist[styleIndex]->name, frames * 1000.0f / elapsed,
                      (unsigned long)drawUs, (unsigned long)drawMaxUs, (unsigned long)flipUs);
             frames = 0;
             fpsStartMs = nowMs();

@@ -44,11 +44,16 @@ typedef struct eye_style {
     void (*prepare)(void);    // Optional one-time setup (maps, tables), run before the first use. NULL = none
 } eye_style_t;
 
+// Which eye this board shows, set once at boot before any style is prepared (for side-specific backgrounds)
+extern bool eyeStyleIsLeftEye;
+
 // Built-in styles (styles/*.c)
 extern const eye_style_t eyeStyleSphere;      // Yellow ball, one big white cartoon eye per screen (Las Vegas Sphere)
 extern const eye_style_t eyeStyleSphereFace;  // Same look, both eyes on one screen
 extern const eye_style_t eyeStyleSphereDrunk; // Sphere eye, bloodshot and droopy with wandering pupils (Halloween)
-extern const eye_style_t eyeStyleSauron;      // Flaming dark-lord eye with a slit pupil, one per screen (Halloween)
+extern const eye_style_t eyeStyleSauron;
+extern const eye_style_t eyeStyleGrinch;      // Wide almond eye: lime white, green iris, scowling lid, fur (Christmas)
+extern const eye_style_t eyeStyleElf;         // Wide almond eye: blue iris, long lashes, porcelain skin      // Flaming dark-lord eye with a slit pupil, one per screen (Halloween)
 
 #ifdef __cplusplus
 }
