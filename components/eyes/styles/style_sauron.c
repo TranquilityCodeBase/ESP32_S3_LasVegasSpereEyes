@@ -156,7 +156,7 @@ static void buildFire(void) {
 // Plain black screen (the renderer clears to black itself, see blackBackground)
 static void sauronBackground(uint16_t *buf, int w, int h) {
     buildFire();
-    for (int i = 0; i < w * h; i++) buf[i] = 0;
+    if (buf != NULL) for (int i = 0; i < w * h; i++) buf[i] = 0;    // Only when asked for a buffer
 }
 
 // Small gaze changes move only the pupil; the eye starts sliding past this

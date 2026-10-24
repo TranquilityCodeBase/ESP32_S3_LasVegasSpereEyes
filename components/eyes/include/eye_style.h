@@ -33,7 +33,8 @@ typedef struct {
 
 typedef struct eye_style {
     const char *name;
-    void (*renderBackground)(uint16_t *buf, int w, int h);                      // Full static background, once
+    void (*renderBackground)(uint16_t *buf, int w, int h);                      // Full static background, once (buf is NULL
+                                                                                // for blackBackground styles: just get ready)
     int (*layout)(const face_state_t *face, eye_pose_t *poses, int maxPoses);   // Place the eyes, returns count
     eye_rect_t (*bounds)(const eye_pose_t *pose);                               // Screen area one eye can touch
     void (*drawEye)(eye_canvas_t *cv, const eye_pose_t *pose);                  // Draw one eye into the canvas

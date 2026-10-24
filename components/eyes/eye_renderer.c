@@ -18,12 +18,16 @@
 #define HELPER_CORE 0                   // Core for the helper task (the render task runs on the other one)
 #define HELPER_PRIO 5
 #define MAX_RECTS   (EYE_MAX_EYES * 2)  // Current + stale rectangles
+#define MAX_STYLES  16                  // Most styles whose backgrounds are kept ready
 
 static const char *TAG = "renderer";
 
 static eye_display_t disp;              // Display hooks
 static const eye_style_t *style;        // Current look
-static uint16_t *background;            // Static background, full screen, PSRAM
+static uint16_t *background;            // Current style's static background, full screen, PSRAM (NULL = plain black)
+static const eye_style_t *readyStyles[MAX_STYLES];    // Styles already prepared, so switching to them is instant
+static uint16_t *readyBackgrounds[MAX_STYLES];        // Their backgrounds (NULL for blackBackground styles)
+static int readyCount;
 static uint16_t *strips[2];             // Work strip per core, internal RAM
 static int fullRedraws;                 // Frames left that must redraw the whole screen
 static int parity;                      // Which of the two buffers is the back buffer now
@@ -131,21 +135,49 @@ static void helperLoop(void *arg) {
     }
 }
 
+// Find a style's prepared background, or prepare it now (slow: draws the whole screen once).
+// Returns its slot, or -1 when out of memory or slots.
+static int prepareStyle(const eye_style_t *s) {
+    for (int i = 0; i < readyCount; i++) {
+        if (readyStyles[i] == s) return i;                            // Already done
+    }
+    if (readyCount == MAX_STYLES) return -1;
+    uint16_t *bg = NULL;
+    if (!s->blackBackground) {                                        // Black needs no buffer: strips are cleared
+        bg = heap_caps_malloc((size_t)disp.width * disp.height * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+        if (bg == NULL) return -1;
+    }
+    int64_t t0 = esp_timer_get_time();
+    s->renderBackground(bg, disp.width, disp.height);                 // Also builds anything else the style needs
+    ESP_LOGI(TAG, "Prepared %s in %lld ms", s->name, (esp_timer_get_time() - t0) / 1000);
+    readyStyles[readyCount] = s;
+    readyBackgrounds[readyCount] = bg;
+    return readyCount++;
+}
+
+esp_err_t eyeRendererPrepare(const eye_style_t *s) {
+    return prepareStyle(s) >= 0 ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
 void eyeRendererSetStyle(const eye_style_t *newStyle) {
+    int slot = prepareStyle(newStyle);                                // Instant if prepared earlier
+    if (slot < 0) {
+        ESP_LOGE(TAG, "No memory for style %s, keeping %s", newStyle->name, style ? style->name : "none");
+        return;
+    }
     style = newStyle;
-    style->renderBackground(background, disp.width, disp.height);    // New static background
+    background = readyBackgrounds[slot];
     fullRedraws = 2;                                                  // Both buffers need everything
     ESP_LOGI(TAG, "Style: %s", style->name);
 }
 
 esp_err_t eyeRendererInit(const eye_display_t *display, const eye_style_t *initialStyle) {
     disp = *display;
-    size_t bgBytes = (size_t)disp.width * disp.height * sizeof(uint16_t);
-    background = heap_caps_malloc(bgBytes, MALLOC_CAP_SPIRAM);
     for (int i = 0; i < 2; i++) {
         strips[i] = heap_caps_malloc((size_t)disp.width * STRIP_H * sizeof(uint16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
-    ESP_RETURN_ON_FALSE(background && strips[0] && strips[1], ESP_ERR_NO_MEM, TAG, "buffers");
+    ESP_RETURN_ON_FALSE(strips[0] && strips[1], ESP_ERR_NO_MEM, TAG, "buffers");
+    ESP_RETURN_ON_FALSE(prepareStyle(initialStyle) >= 0, ESP_ERR_NO_MEM, TAG, "background");
     helperDone = xSemaphoreCreateBinary();
     ESP_RETURN_ON_FALSE(xTaskCreatePinnedToCore(helperLoop, "render2", 4096, NULL, HELPER_PRIO, &helperTask, HELPER_CORE) == pdPASS,
                         ESP_ERR_NO_MEM, TAG, "helper task");

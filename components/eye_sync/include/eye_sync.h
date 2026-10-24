@@ -25,6 +25,8 @@ typedef struct {
     uint8_t blinkIndex;     // Index into blinkEffectTable of that blink
     bool hasTarget;         // true = leader is tracking a person, false = idle wander
     uint8_t styleIndex;     // Which design the leader shows (index into the style playlist in app_main.c)
+    uint16_t styleMsLeft;   // Time until the leader's next design, ms (0 = designs don't rotate)
+    uint32_t ageMs;         // Follower only: how long ago this state arrived (set by eyeSyncGetLatest)
 } eye_sync_state_t;
 
 // Link settings. Secrets come from main/secrets.h (gitignored), never from committed code.

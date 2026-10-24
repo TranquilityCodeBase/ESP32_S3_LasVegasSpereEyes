@@ -11,7 +11,7 @@
 
 #define SYNC_MAGIC0        'E'      // Packet magic bytes
 #define SYNC_MAGIC1        'Y'
-#define SYNC_VERSION       2        // Bump when the packet layout changes (2: added styleIndex)
+#define SYNC_VERSION       3        // Bump when the packet layout changes (2: styleIndex, 3: styleMsLeft)
 #define SYNC_SCALE         10000.0f // Floats travel as int16 x10000
 #define SYNC_MIN_GAP_US    50000    // 20 Hz publish limit
 #define SYNC_FRESH_MS      300      // Follower gaze source freshness window
@@ -28,6 +28,7 @@ typedef struct __attribute__((packed)) {
     uint8_t blinkIndex;     // Blink effect index
     uint8_t hasTarget;      // 0/1
     uint8_t styleIndex;     // Leader's design
+    uint16_t styleMsLeft;   // ms until the leader's next design
 } eye_sync_packet_t;
 
 static const char *TAG = "eye_sync";
@@ -64,6 +65,7 @@ static void syncOnRecv(const esp_now_recv_info_t *info, const uint8_t *data, int
         .blinkIndex = pkt->blinkIndex,
         .hasTarget = pkt->hasTarget != 0,
         .styleIndex = pkt->styleIndex,
+        .styleMsLeft = pkt->styleMsLeft,
     };
     int64_t now = esp_timer_get_time();                 // Stamp outside the lock
     portENTER_CRITICAL(&syncMux);
@@ -123,6 +125,7 @@ void eyeSyncPublish(const eye_sync_state_t *state) {
         .blinkIndex = state->blinkIndex,
         .hasTarget = state->hasTarget ? 1 : 0,
         .styleIndex = state->styleIndex,
+        .styleMsLeft = state->styleMsLeft,
     };
     esp_err_t err = esp_now_send(syncPeer, (const uint8_t *)&pkt, sizeof(pkt));
     if (err != ESP_OK) {
@@ -142,7 +145,9 @@ bool eyeSyncGetLatest(eye_sync_state_t *out, uint32_t maxAgeMs) {
     stamp = syncStampUs;
     portEXIT_CRITICAL(&syncMux);
     if (stamp == 0) return false;                       // Nothing received yet
-    if ((esp_timer_get_time() - stamp) / 1000 > (int64_t)maxAgeMs) return false;   // Too old
+    int64_t ageMs = (esp_timer_get_time() - stamp) / 1000;
+    if (ageMs > (int64_t)maxAgeMs) return false;       // Too old
+    s.ageMs = (uint32_t)ageMs;
     *out = s;
     return true;
 }
