@@ -5,6 +5,56 @@
 
 #include <math.h>
 
+static float trimR = 1.0f, trimG = 1.0f, trimB = 1.0f;     // Color trim gains
+static float invGamma = 1.0f;                                // 1 / gamma for grays (1 = off)
+static float whiteR = 1.0f, whiteG = 1.0f, whiteB = 1.0f;  // White balance gains for grays and white
+
+void canvasSetWhiteBalance(float r, float g, float b) {
+    whiteR = r;
+    whiteG = g;
+    whiteB = b;
+}
+
+void canvasSetColorTrim(float r, float g, float b, float grayGamma) {
+    trimR = r;
+    trimG = g;
+    trimB = b;
+    invGamma = grayGamma > 0.0f ? 1.0f / grayGamma : 1.0f;
+}
+
+// Brighten (gamma > 1) or darken mid grays; black and white stay put
+static inline float grayCurve(float c) {
+    return 255.0f * powf(c / 255.0f, invGamma);
+}
+
+// The gains are weighted by saturation: strong colors (the yellow ball) get the full trim, while
+// whites, grays and black stay untouched, so the eye white doesn't pick up a tint. The gray curve is the
+// opposite: it only touches grays, for screens that show mid grays darker.
+void canvasTrim(float *r, float *g, float *b) {
+    float hi = fmaxf(*r, fmaxf(*g, *b));
+    float lo = fminf(*r, fminf(*g, *b));
+    float sat = hi > 0.0f ? (hi - lo) / hi : 0.0f;              // 0 = gray .. 1 = pure color
+    *r = fminf(255.0f, fmaxf(0.0f, *r * (1.0f + (trimR - 1.0f) * sat)));   // Scale and clamp each channel
+    *g = fminf(255.0f, fmaxf(0.0f, *g * (1.0f + (trimG - 1.0f) * sat)));
+    *b = fminf(255.0f, fmaxf(0.0f, *b * (1.0f + (trimB - 1.0f) * sat)));
+    if (invGamma != 1.0f) {                                     // Gray curve, also weighted: grays only
+        float w = 1.0f - sat;
+        *r += (grayCurve(*r) - *r) * w;
+        *g += (grayCurve(*g) - *g) * w;
+        *b += (grayCurve(*b) - *b) * w;
+    }
+    float w = 1.0f - sat;                                       // White balance: grays and white only
+    *r = fminf(255.0f, *r * (1.0f + (whiteR - 1.0f) * w));
+    *g = fminf(255.0f, *g * (1.0f + (whiteG - 1.0f) * w));
+    *b = fminf(255.0f, *b * (1.0f + (whiteB - 1.0f) * w));
+}
+
+uint16_t canvasRgb565(uint32_t c) {
+    float r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+    canvasTrim(&r, &g, &b);
+    return (uint16_t)((((int)(r + 0.5f) >> 3) << 11) | (((int)(g + 0.5f) >> 2) << 5) | ((int)(b + 0.5f) >> 3));
+}
+
 // Ellipse with the values the per-pixel math needs
 typedef struct {
     float cx, cy;

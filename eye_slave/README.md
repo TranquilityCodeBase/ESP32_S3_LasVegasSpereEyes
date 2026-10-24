@@ -16,3 +16,10 @@ Flash from the build folder to the slave's COM port (each board gets its own por
 ```bash
 py -m esptool --chip esp32s3 -p COM7 -b 921600 write-flash "@flash_args"
 ```
+
+## Panel correction (this screen only)
+
+The slave's screen came out dimmer and tinted compared with the master's, so `CMakeLists.txt` here has a
+correction block (ball color, eye-white balance, gray lift, backlight 60 %). It's tuned to this one panel.
+**If the slave screen or board is replaced, delete that block** so the new panel starts from 1.0 / 50 %,
+then re-tune against the master if needed.

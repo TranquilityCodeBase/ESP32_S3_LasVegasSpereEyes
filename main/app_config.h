@@ -11,6 +11,33 @@
 #define APP_EYE_IS_LEFT         1           // 1 = viewer's left eye, 0 = viewer's right eye
 #endif
 
+// ---------- Color trim (per board) ----------
+// Red, green, blue gains to make two screens match (1.0 = unchanged). Set per folder in CMakeLists.txt.
+#ifndef APP_COLOR_TRIM_R
+#define APP_COLOR_TRIM_R        1.0f
+#endif
+#ifndef APP_COLOR_TRIM_G
+#define APP_COLOR_TRIM_G        1.0f
+#endif
+#ifndef APP_COLOR_TRIM_B
+#define APP_COLOR_TRIM_B        1.0f
+#endif
+#ifndef APP_WHITE_R                         // White balance for grays and white (1.0 = unchanged)
+#define APP_WHITE_R             1.0f
+#endif
+#ifndef APP_WHITE_G
+#define APP_WHITE_G             1.0f
+#endif
+#ifndef APP_WHITE_B
+#define APP_WHITE_B             1.0f
+#endif
+#ifndef APP_BACKLIGHT_PERCENT
+#define APP_BACKLIGHT_PERCENT   BOARD_BACKLIGHT_DEFAULT_PERCENT   // Per-board backlight (dimmer panels can go higher)
+#endif
+#ifndef APP_GRAY_GAMMA
+#define APP_GRAY_GAMMA          1.0f        // > 1 lightens mid grays (eye white shading)
+#endif
+
 // ---------- Rendering ----------
 #define APP_TARGET_FPS          30          // Animation frame rate (panel refreshes at about 64 Hz)
 #define APP_RENDER_CORE         1           // CPU core for the render task (Wi-Fi runs on core 0)

@@ -3,10 +3,12 @@
 
 #include "app_config.h"
 #include "blink_effect.h"
+#include "board_backlight.h"
 #include "board_display.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "eye_animator.h"
+#include "eye_canvas.h"
 #include "eye_renderer.h"
 #include "eye_style.h"
 #include "eye_sync.h"
@@ -71,6 +73,20 @@ static void dumpFrame(const face_state_t *face) {
 #endif
 
 static void renderTask(void *arg) {
+    // The panel is created here, on the render core, so its refresh interrupt runs on this core too.
+    // On core 0 the Wi-Fi interrupts delayed it and the picture slipped up with a band at the bottom.
+    ESP_ERROR_CHECK(boardDisplayInit());
+    boardBacklightSet(APP_BACKLIGHT_PERCENT);                           // Per-board brightness
+    eye_display_t display = {
+        .width = BOARD_LCD_H_RES,
+        .height = BOARD_LCD_V_RES,
+        .backBuffer = boardDisplayBackBuffer,
+        .flip = boardDisplayFlip,
+    };
+    canvasSetColorTrim(APP_COLOR_TRIM_R, APP_COLOR_TRIM_G, APP_COLOR_TRIM_B, APP_GRAY_GAMMA);   // Match this screen to the other one
+    canvasSetWhiteBalance(APP_WHITE_R, APP_WHITE_G, APP_WHITE_B);
+    ESP_ERROR_CHECK(eyeRendererInit(&display, &eyeStyleSphere));
+
     const TickType_t framePeriod = pdMS_TO_TICKS(1000 / APP_TARGET_FPS);
     TickType_t lastWake = xTaskGetTickCount();
     uint32_t fpsStartMs = nowMs();
@@ -104,15 +120,6 @@ void app_main(void) {
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(err);
-
-    ESP_ERROR_CHECK(boardDisplayInit());
-    eye_display_t display = {
-        .width = BOARD_LCD_H_RES,
-        .height = BOARD_LCD_V_RES,
-        .backBuffer = boardDisplayBackBuffer,
-        .flip = boardDisplayFlip,
-    };
-    ESP_ERROR_CHECK(eyeRendererInit(&display, &eyeStyleSphere));
 
     // Optional ESP-NOW link to the other board
     static const uint8_t pmk[16] = SECRET_SYNC_PMK;

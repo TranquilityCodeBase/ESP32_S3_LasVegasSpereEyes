@@ -19,8 +19,8 @@
 
 #define LCD_SPI_HOST        SPI2_HOST
 #define LCD_SPI_HZ          4000000         // Demo uses 4 MHz for the 9-bit command interface
-#define BOUNCE_LINES        40              // Bounce buffer height in lines. Must divide 480. Bigger = more slack
-                                            // for the ISR when PSRAM is busy (10, the demo value, drifted)
+#define BOUNCE_LINES        20              // Bounce buffer height in lines. Must divide 480. More lines = more
+                                            // time for the refill interrupt before the picture slips
 
 static const char *TAG = "display";
 
@@ -152,7 +152,6 @@ static esp_err_t rgbPanelInit(void) {
             .vsync_front_porch = BOARD_LCD_VSYNC_FRONT,
         },
         .flags.fb_in_psram = true,
-        .flags.bb_invalidate_cache = true,                              // Panel reads don't evict the renderer's cache lines
     };
     ESP_RETURN_ON_ERROR(esp_lcd_new_rgb_panel(&config, &panel), TAG, "rgb panel");
 
