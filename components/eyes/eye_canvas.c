@@ -13,10 +13,15 @@ void canvasSetColorTrim(float r, float g, float b) {
     trimB = b;
 }
 
+// The trim is weighted by saturation: strong colors (the yellow ball) get the full trim, while
+// whites, grays and black stay untouched, so the eye white doesn't pick up a tint.
 void canvasTrim(float *r, float *g, float *b) {
-    *r = fminf(255.0f, fmaxf(0.0f, *r * trimR));              // Scale and clamp each channel
-    *g = fminf(255.0f, fmaxf(0.0f, *g * trimG));
-    *b = fminf(255.0f, fmaxf(0.0f, *b * trimB));
+    float hi = fmaxf(*r, fmaxf(*g, *b));
+    float lo = fminf(*r, fminf(*g, *b));
+    float sat = hi > 0.0f ? (hi - lo) / hi : 0.0f;              // 0 = gray .. 1 = pure color
+    *r = fminf(255.0f, fmaxf(0.0f, *r * (1.0f + (trimR - 1.0f) * sat)));   // Scale and clamp each channel
+    *g = fminf(255.0f, fmaxf(0.0f, *g * (1.0f + (trimG - 1.0f) * sat)));
+    *b = fminf(255.0f, fmaxf(0.0f, *b * (1.0f + (trimB - 1.0f) * sat)));
 }
 
 uint16_t canvasRgb565(uint32_t c) {

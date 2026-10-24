@@ -9,5 +9,9 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 idf_build_set_property(COMPILE_DEFINITIONS "APP_EYE_IS_LEFT=0" APPEND)   # Viewer's right eye
 idf_build_set_property(COMPILE_DEFINITIONS "APP_SYNC_ROLE=2" APPEND)     # ESP-NOW slave: copies the master
+# Color trim so this screen matches the master's (screens vary). 1.0 = unchanged.
+idf_build_set_property(COMPILE_DEFINITIONS "APP_COLOR_TRIM_R=0.95f" APPEND)
+idf_build_set_property(COMPILE_DEFINITIONS "APP_COLOR_TRIM_G=1.20f" APPEND)
+idf_build_set_property(COMPILE_DEFINITIONS "APP_COLOR_TRIM_B=1.0f" APPEND)
 
 project(sphere_eyes_slave)
