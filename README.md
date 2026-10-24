@@ -53,7 +53,8 @@ then page-flips at the panel's frame boundary, so there is no tearing.
 
 - New look: add `styles/style_x.c` with an `eye_style_t`, declare it in `eye_style.h`, append it to `stylePlaylist`
   in `app_main.c`. Built in: `eyeStyleSphere` (one eye per screen), `eyeStyleSphereFace` (both eyes on one screen)
-  `eyeStyleSauron` (flaming eye with a slit pupil, Halloween) and `eyeStyleSphereDrunk` (bloodshot Sphere eye, Halloween).
+  `eyeStyleSauron` (flaming eye with a slit pupil, Halloween), `eyeStyleSphereDrunk` (bloodshot Sphere eye, Halloween), and the wide almond eyes `eyeStyleGrinch` and
+  `eyeStyleElf` (the white is 3/4 of the screen wide; the iris does most of the looking around).
 - Design rotation: the master shows each design in `stylePlaylist` for `APP_STYLE_SECONDS` (15 s) and sends the
   slave which one is up, so both screens switch together. Flash both boards with the same playlist.
   All designs are drawn in code (no stored images), so each one costs only a few KB of flash.

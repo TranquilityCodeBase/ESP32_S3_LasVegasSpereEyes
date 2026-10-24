@@ -240,8 +240,8 @@ const eye_style_t eyeStyleSphereFace = {
 #define VEIN_STOP_Q     0.38f       // Veins stop this close to the middle (the pupil's home)
 #define FLUSH_START_Q   0.62f       // Pink flush starts this far out...
 #define FLUSH_MAX       70.0f       // ...and reaches this strength (0..255) at the edge
-#define LID_DROOP       0.22f       // Lid edge sits this far above the middle (x ry), at its lowest point
-#define LID_OUTER_SHIFT 0.40f       // Lowest point moved toward the outer corner (x rx): sleepy, sad droop
+#define LID_DROOP       0.16f       // Lid edge sits this far above the middle (x ry), at its lowest point
+#define LID_OUTER_SHIFT 0.65f       // Lowest point moved toward the outer corner (x rx): sleepy, sad droop
 #define WOBBLE_X        0.13f       // Pupil wander (x rx)
 #define WOBBLE_Y        0.07f       // (x ry)
 #define LOOK_DOWN       0.10f       // Pupils sag a little (x ry), so they stay below the heavy lids
@@ -394,7 +394,7 @@ static void drawLid(eye_canvas_t *cv, const eye_pose_t *pose) {
     float ry = pose->ry * open;
     float ow = OUTLINE_K * pose->ry;
     eye_ellipse_t sclera = {pose->cx, pose->cy, pose->rx, ry};
-    float lidRx = pose->rx * 1.5f, lidRy = pose->ry * 1.1f;
+    float lidRx = pose->rx * 1.4f, lidRy = pose->ry * 1.1f;
     float lidCx = pose->cx + (pose->isLeft ? -1.0f : 1.0f) * LID_OUTER_SHIFT * pose->rx;   // Outer side hangs lower
     float lidBottom = pose->cy - LID_DROOP * ry;
     eye_ellipse_t edge = {lidCx, lidBottom - lidRy + ow * 0.8f, lidRx, lidRy};
