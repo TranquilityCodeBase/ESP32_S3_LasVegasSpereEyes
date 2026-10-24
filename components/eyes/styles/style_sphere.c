@@ -31,8 +31,10 @@
 // One eye per screen (each board is one eye of the face)
 #define EYE1_RX         128.0f      // Eye half width
 #define EYE1_RY         184.0f      // Eye half height
-#define EYE1_SHIFT_X    48.0f       // How far the eye slides at full gaze
+#define EYE1_SHIFT_X    118.0f      // How far the eye slides at full gaze: the white just reaches the screen edge,
+                                    // the outline goes off screen. Past ~119 the white itself gets cut off.
 #define EYE1_SHIFT_Y    30.0f
+#define EYE1_PUPIL_GAP  0.0f        // White left between pupil and eye edge at full gaze (x ry): 0 = pupil touches the edge
 
 // Two eyes on one screen (whole face on one board)
 #define EYE2_SPACING    88.0f       // Eye center distance from the middle
@@ -41,6 +43,7 @@
 #define EYE2_RY         86.0f
 #define EYE2_SHIFT_X    52.0f
 #define EYE2_SHIFT_Y    40.0f
+#define EYE2_PUPIL_GAP  0.05f
 
 // 4x4 ordered dither, so the gradient has no visible bands in RGB565
 static const uint8_t bayer4[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
@@ -83,8 +86,9 @@ static void sphereBackground(uint16_t *buf, int w, int h) {
     }
 }
 
-// Fill one pose: size with foreshortening toward the rim, openness, and pupil offset from the gaze
-static void placeEye(const face_state_t *face, eye_pose_t *p, float cx, float cy, float rx, float ry) {
+// Fill one pose: size with foreshortening toward the rim, openness, and pupil offset from the gaze.
+// pupilGap is the white left beside the pupil at full gaze, as a fraction of ry.
+static void placeEye(const face_state_t *face, eye_pose_t *p, float cx, float cy, float rx, float ry, float pupilGap) {
     p->cx = cx;
     p->cy = cy;
     float dx = (cx - SCREEN_C) / BALL_R;                                // Position on the ball, -1..1
@@ -94,7 +98,7 @@ static void placeEye(const face_state_t *face, eye_pose_t *p, float cx, float cy
     p->openness = p->isLeft ? face->openLeft : face->openRight;
     p->pupilScale = face->pupilScale;
     float pr = PUPIL_K * p->ry * p->pupilScale;
-    p->pupilDx = face->gazeX * (p->rx - pr - 0.05f * p->ry);           // Pupil looks too, staying inside the white
+    p->pupilDx = face->gazeX * (p->rx - pr - pupilGap * p->ry);        // Pupil looks too, staying inside the white
     p->pupilDy = face->gazeY * (p->ry - pr - 0.12f * p->ry);
 }
 
@@ -111,7 +115,7 @@ static int sphereEyeLayout(const face_state_t *face, eye_pose_t *poses, int maxP
     if (maxPoses < 1) return 0;
     poses[0].isLeft = face->isLeftEye;                                  // This board's eye
     placeEye(face, &poses[0], SCREEN_C + deadZone(face->gazeX) * EYE1_SHIFT_X, SCREEN_C + deadZone(face->gazeY) * EYE1_SHIFT_Y,
-             EYE1_RX, EYE1_RY);
+             EYE1_RX, EYE1_RY, EYE1_PUPIL_GAP);
     return 1;
 }
 
@@ -122,7 +126,7 @@ static int sphereFaceLayout(const face_state_t *face, eye_pose_t *poses, int max
     for (int i = 0; i < 2; i++) {
         poses[i].isLeft = (i == 0);
         float cx = SCREEN_C + (poses[i].isLeft ? -EYE2_SPACING : EYE2_SPACING) + shiftX;
-        placeEye(face, &poses[i], cx, EYE2_Y + shiftY, EYE2_RX, EYE2_RY);
+        placeEye(face, &poses[i], cx, EYE2_Y + shiftY, EYE2_RX, EYE2_RY, EYE2_PUPIL_GAP);
     }
     return 2;
 }
