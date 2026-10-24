@@ -13,7 +13,7 @@
 #define MICRO_MIN_MS        900         // Tiny drifts while resting, so the eye never looks frozen
 #define MICRO_MAX_MS        2200
 #define MICRO_AMOUNT        0.04f       // Size of those drifts (gaze units)
-#define SCAN_X              0.9f        // How far left and right the scan goes (1 = full)
+#define SCAN_X              1.0f        // How far left and right the scan goes (1 = full: pupil touches the white's edge)
 
 // One step of the scan: move to x over moveMs, then hold for holdMs
 typedef struct {
