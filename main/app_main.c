@@ -3,6 +3,7 @@
 
 #include "app_config.h"
 #include "blink_effect.h"
+#include "board_backlight.h"
 #include "board_display.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -75,6 +76,7 @@ static void renderTask(void *arg) {
     // The panel is created here, on the render core, so its refresh interrupt runs on this core too.
     // On core 0 the Wi-Fi interrupts delayed it and the picture slipped up with a band at the bottom.
     ESP_ERROR_CHECK(boardDisplayInit());
+    boardBacklightSet(APP_BACKLIGHT_PERCENT);                           // Per-board brightness
     eye_display_t display = {
         .width = BOARD_LCD_H_RES,
         .height = BOARD_LCD_V_RES,

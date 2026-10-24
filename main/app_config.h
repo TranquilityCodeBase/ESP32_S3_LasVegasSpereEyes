@@ -31,6 +31,9 @@
 #ifndef APP_WHITE_B
 #define APP_WHITE_B             1.0f
 #endif
+#ifndef APP_BACKLIGHT_PERCENT
+#define APP_BACKLIGHT_PERCENT   BOARD_BACKLIGHT_DEFAULT_PERCENT   // Per-board backlight (dimmer panels can go higher)
+#endif
 #ifndef APP_GRAY_GAMMA
 #define APP_GRAY_GAMMA          1.0f        // > 1 lightens mid grays (eye white shading)
 #endif
