@@ -31,6 +31,7 @@ typedef struct {
     bool mirrorX;           // true = flip lateral sign so +x is the viewer's right
     float maxAngleDeg;      // Angle that maps to gaze x = +-1
     float maxRangeM;        // Ignore targets farther than this
+    float minRangeM;        // Ignore targets nearer than this
 } ld2450_config_t;
 
 // Counters for checking the wiring: bytes > 0 means the radar's TX reaches us, goodFrames > 0 means the baud rate is right

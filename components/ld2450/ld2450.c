@@ -195,12 +195,14 @@ static bool ld2450Poll(uint32_t nowMs, gaze_target_t *out) {
 
     if (stamp != seenStampUs) {                         // New radar frame: update who we follow
         float maxMm = ld2450Cfg.maxRangeM * 1000.0f;
+        float minMm = ld2450Cfg.minRangeM * 1000.0f;
         float predX = lockX + lockVx * (stamp - seenStampUs) / 1e6f;   // Where the followed person should be now
         int best = -1;                                  // Candidate to follow
         float bestScore = 1e9f;
         for (int i = 0; i < LD2450_MAX_TARGETS; i++) {
             if (!t[i].valid || t[i].held || t[i].parked) continue;   // Not a person on the move
-            if (hypotf((float)t[i].xMm, (float)t[i].yMm) > maxMm) continue;   // Too far away
+            float distMm = hypotf((float)t[i].xMm, (float)t[i].yMm);
+            if (distMm > maxMm || distMm < minMm) continue;                  // Too far away, or too close to be a passer-by
             float score = locked ? hypotf(t[i].xMm - predX, t[i].yMm - lockY)   // Nearest to the followed person
                                  : hypotf((float)t[i].xMm, (float)t[i].yMm);    // Or simply nearest to the radar
             if (locked && score > LD2450_LOCK_MM) continue;                    // Someone else

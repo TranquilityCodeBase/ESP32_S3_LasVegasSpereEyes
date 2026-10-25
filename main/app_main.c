@@ -242,6 +242,7 @@ void app_main(void) {
         .mirrorX = APP_RADAR_MIRROR_X,
         .maxAngleDeg = APP_RADAR_MAX_ANGLE,
         .maxRangeM = APP_RADAR_MAX_RANGE_M,
+        .minRangeM = APP_RADAR_MIN_RANGE_M,
     };
     if (ld2450Init(&radarConfig) == ESP_OK) {
         if (APP_RADAR_GAZE) gazeSources[gazeSourceCount++] = &gazeSourceLd2450;

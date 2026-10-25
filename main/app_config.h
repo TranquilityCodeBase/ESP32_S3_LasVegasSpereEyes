@@ -60,7 +60,8 @@
 #define APP_RADAR_TX_PIN        BOARD_PIN_HEADER_IO19
 #define APP_RADAR_MIRROR_X      true        // Radar +x is the viewer's left (checked 2026-10-25), flip so +x is their right
 #define APP_RADAR_MAX_ANGLE     30.0f       // Bearing (degrees) that maps to the edge of the gaze range (smaller = eyes move more)
-#define APP_RADAR_MAX_RANGE_M   4.0f        // Ignore people farther than this (something at ~4.9 m in the test room steered the eyes)
+#define APP_RADAR_MAX_RANGE_M   6.0f        // Ignore people farther than this (fixed clutter is filtered out as "parked")
+#define APP_RADAR_MIN_RANGE_M   0.5f        // Ignore anything nearer than this (the stand, a hand on the sensor)
 
 // ---------- ESP-NOW sync between the two boards ----------
 // 0 = off, 1 = master (sends gaze and blinks), 2 = slave (copies the master). Set by the project CMakeLists.txt.
