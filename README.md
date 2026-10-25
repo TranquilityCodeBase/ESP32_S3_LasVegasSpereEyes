@@ -63,7 +63,7 @@ then page-flips at the panel's frame boundary, so there is no tearing.
 
 ## Radar (LD2450)
 
-Master board only. Wiring: radar TX to GPIO19, radar RX to GPIO20, 5 V and GND from the 12-pin header.
+Master board only. Wiring: radar RX to GPIO19 (D-), radar TX to GPIO20 (D+), 5 V and GND from the 12-pin header.
 GPIO43/44 reach the header only with the USB-C port unplugged, so they are not used. GPIO19/20 are the chip's
 native USB pins, so `sdkconfig.defaults` turns native USB off (logs and flashing use the CH343 port).
 Point the radar's antenna side (the flat side with the gold patches, no parts on it) at the people.

@@ -49,15 +49,15 @@
 #define APP_STYLE_SECONDS       15          // Time on each design (0 = stay on the first one)
 
 // ---------- LD2450 radar (master board only) ----------
-// Wire radar TX -> GPIO19 and radar RX -> GPIO20 on the 12-pin header, 5 V from USB_5V on the same header.
+// Wire radar RX -> GPIO19 (D-) and radar TX -> GPIO20 (D+) on the 12-pin header, 5 V from USB_5V on the same header.
 // GPIO43/44 are not used because they reach the header only with the USB-C port unplugged.
 // GPIO19/20 are the chip's native USB pins: sdkconfig.defaults turns native USB off so the UART gets them.
 #define APP_RADAR_ENABLED       (APP_SYNC_ROLE != 2)   // The slave has no radar, it gets the gaze over ESP-NOW
 #define APP_RADAR_GAZE          0           // 1 = eyes follow the radar, 0 = radar is only logged (bring-up)
 #define APP_RADAR_LOG_MS        1000        // Print radar counters and targets this often (0 = never)
 #define APP_RADAR_UART          UART_NUM_1
-#define APP_RADAR_RX_PIN        BOARD_PIN_HEADER_IO19
-#define APP_RADAR_TX_PIN        BOARD_PIN_HEADER_IO20
+#define APP_RADAR_RX_PIN        BOARD_PIN_HEADER_IO20
+#define APP_RADAR_TX_PIN        BOARD_PIN_HEADER_IO19
 #define APP_RADAR_MIRROR_X      false       // Flip if the eyes look the wrong way
 #define APP_RADAR_MAX_ANGLE     60.0f       // Bearing (degrees) that maps to the edge of the gaze range
 #define APP_RADAR_MAX_RANGE_M   5.0f        // Ignore people farther than this
