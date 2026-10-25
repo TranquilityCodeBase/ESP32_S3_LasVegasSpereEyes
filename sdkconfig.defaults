@@ -23,5 +23,9 @@ CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 CONFIG_LCD_RGB_ISR_IRAM_SAFE=y
 CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
 
+# Native USB off: logs and flashing use the CH343 port, and GPIO19/20 (native USB pins) carry the LD2450 radar UART
+CONFIG_USJ_ENABLE_USB_SERIAL_JTAG=n
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
 # Wi-Fi (ESP-NOW only): keep its buffers in PSRAM so the panel's internal RAM stays free
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y

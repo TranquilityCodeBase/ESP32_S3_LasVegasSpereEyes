@@ -114,6 +114,30 @@ static void syncStep(void) {
     }
 }
 
+#if APP_RADAR_ENABLED && APP_RADAR_LOG_MS > 0
+// Bring-up check: print what the radar sends. "bytes 0" = no signal on GPIO19 (wiring or power),
+// bytes but no good frames = wrong baud rate or noise, good frames about 10 a second = radar works.
+static void radarLogTask(void *arg) {
+    ld2450_stats_t last = {0};
+    while (true) {
+        vTaskDelay(pdMS_TO_TICKS(APP_RADAR_LOG_MS));
+        ld2450_stats_t now;
+        ld2450GetStats(&now);
+        ld2450_target_t t[LD2450_MAX_TARGETS];
+        uint32_t ageMs;
+        int count = ld2450GetTargets(t, &ageMs);
+        ESP_LOGI(TAG, "Radar: %lu bytes, %lu good, %lu bad frames in %d ms, %d target(s)",
+                 (unsigned long)(now.bytes - last.bytes), (unsigned long)(now.goodFrames - last.goodFrames),
+                 (unsigned long)(now.badFrames - last.badFrames), APP_RADAR_LOG_MS, count);
+        for (int i = 0; i < LD2450_MAX_TARGETS && ageMs < 500; i++) {   // Only fresh targets
+            if (!t[i].valid) continue;
+            ESP_LOGI(TAG, "  target %d: x %d mm, y %d mm, speed %d cm/s", i + 1, t[i].xMm, t[i].yMm, t[i].speedCmS);
+        }
+        last = now;
+    }
+}
+#endif
+
 #if APP_DEBUG_FRAME_DUMP
 // Debug: print the on-screen frame, downsampled, as hex over the console, plus the face state
 static void dumpFrame(const face_state_t *face) {
@@ -214,8 +238,14 @@ void app_main(void) {
         .maxAngleDeg = APP_RADAR_MAX_ANGLE,
         .maxRangeM = APP_RADAR_MAX_RANGE_M,
     };
-    if (ld2450Init(&radarConfig) == ESP_OK) gazeSources[gazeSourceCount++] = &gazeSourceLd2450;
-    else ESP_LOGW(TAG, "LD2450 failed to start");
+    if (ld2450Init(&radarConfig) == ESP_OK) {
+        if (APP_RADAR_GAZE) gazeSources[gazeSourceCount++] = &gazeSourceLd2450;
+#if APP_RADAR_LOG_MS > 0
+        xTaskCreatePinnedToCore(radarLogTask, "radarLog", 3072, NULL, 2, NULL, 0);   // Low priority, off the render core
+#endif
+    } else {
+        ESP_LOGW(TAG, "LD2450 failed to start");
+    }
 #endif
     // Always last. Master: look around when nobody is there. Slave: hold center until the master says otherwise.
     gazeSources[gazeSourceCount++] = (APP_SYNC_ROLE == EYE_SYNC_ROLE_FOLLOWER) ? &gazeSourceCenter : &gazeSourceIdle;

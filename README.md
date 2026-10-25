@@ -63,9 +63,15 @@ then page-flips at the panel's frame boundary, so there is no tearing.
 
 ## Radar (LD2450)
 
-Not wired yet. Plan: radar TX to GPIO19, radar RX to GPIO20, 5 V and GND from the 12-pin header, then set
-`APP_RADAR_ENABLED 1`. GPIO43/44 reach the header only with the USB-C port unplugged, so they are not used.
-Untested on hardware: if the eyes look the wrong way, set `APP_RADAR_MIRROR_X true`.
+Master board only. Wiring: radar TX to GPIO19, radar RX to GPIO20, 5 V and GND from the 12-pin header.
+GPIO43/44 reach the header only with the USB-C port unplugged, so they are not used. GPIO19/20 are the chip's
+native USB pins, so `sdkconfig.defaults` turns native USB off (logs and flashing use the CH343 port).
+Point the radar's antenna side (the flat side with the gold patches, no parts on it) at the people.
+
+The log prints a radar line every second (`APP_RADAR_LOG_MS`): `0 bytes` means nothing reaches GPIO19 (wiring,
+power or ground), bytes with `0 good` frames means a wrong baud rate or noise, about 10 good frames a second means
+it works, followed by each target's x, y and speed. Eyes follow the radar once `APP_RADAR_GAZE` is 1; if they
+look the wrong way, set `APP_RADAR_MIRROR_X true`.
 
 ## Two boards (ESP-NOW)
 

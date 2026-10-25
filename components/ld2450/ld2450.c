@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "ld2450.h"
+#include "driver/gpio.h"
 
 #define LD2450_BAUD        256000   // Fixed radar baud rate
 #define LD2450_FRAME_LEN   30       // 4 header + 3 x 8 target + 2 tail
@@ -24,6 +25,7 @@ static ld2450_target_t ld2450Latest[LD2450_MAX_TARGETS];            // Latest pa
 static int64_t ld2450StampUs = 0;                                   // esp_timer time of the latest frame, 0 = none yet
 static portMUX_TYPE ld2450Mux = portMUX_INITIALIZER_UNLOCKED;       // Guards latest + stamp
 static bool ld2450Started = false;                                  // true once ld2450Init succeeded
+static ld2450_stats_t ld2450Counts;                                 // Byte and frame counters for wiring checks
 
 // Decode the radar's sign-magnitude int16: bit15 set = positive, clear = negative (per HLK-LD2450 manual example).
 // Doubt: this follows the manual's worked examples (0x030E -> -782, 0x86B1 -> +1713); verify the X sign on real hardware.
@@ -58,6 +60,7 @@ static void ld2450Task(void *arg) {
         if (uart_read_bytes(ld2450Cfg.uartNum, &b, 1, pdMS_TO_TICKS(100)) != 1) {   // Wait for a byte
             continue;                                   // Timeout, try again
         }
+        ld2450Counts.bytes++;                           // Any byte at all proves the radar's TX wire reaches us
         if (idx < 4) {                                  // Still matching the header
             if (b == ld2450Header[idx]) {
                 frame[idx++] = b;                       // Header byte matches
@@ -73,7 +76,7 @@ static void ld2450Task(void *arg) {
         if (idx < LD2450_FRAME_LEN) continue;           // Frame not complete yet
         idx = 0;                                        // Next byte starts a new frame
         if (frame[28] != ld2450Tail[0] || frame[29] != ld2450Tail[1]) {
-            ESP_LOGW(TAG, "Bad tail, resync");          // Corrupt frame, drop it
+            ld2450Counts.badFrames++;                   // Corrupt frame, drop it (counted, not logged: 10 frames a second)
             continue;
         }
         ld2450_target_t parsed[LD2450_MAX_TARGETS];     // Parse outside the lock
@@ -82,6 +85,7 @@ static void ld2450Task(void *arg) {
         portENTER_CRITICAL(&ld2450Mux);
         memcpy(ld2450Latest, parsed, sizeof(parsed));   // Publish targets
         ld2450StampUs = now;                            // And their timestamp
+        ld2450Counts.goodFrames++;
         portEXIT_CRITICAL(&ld2450Mux);
     }
 }
@@ -102,6 +106,7 @@ esp_err_t ld2450Init(const ld2450_config_t *config) {
     if (err != ESP_OK) return err;
     err = uart_param_config(config->uartNum, &uartCfg);
     if (err == ESP_OK) err = uart_set_pin(config->uartNum, config->txPin, config->rxPin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    if (err == ESP_OK) err = gpio_set_pull_mode(config->rxPin, GPIO_PULLUP_ONLY);   // A loose RX wire reads idle, not noise
     if (err != ESP_OK) {
         uart_driver_delete(config->uartNum);            // Roll back on failure
         return err;
@@ -130,6 +135,13 @@ int ld2450GetTargets(ld2450_target_t out[LD2450_MAX_TARGETS], uint32_t *ageMs) {
         if (out[i].valid) count++;
     }
     return count;
+}
+
+void ld2450GetStats(ld2450_stats_t *out) {
+    if (out == NULL) return;
+    portENTER_CRITICAL(&ld2450Mux);
+    *out = ld2450Counts;                                // Counters only grow, a slightly old copy is fine
+    portEXIT_CRITICAL(&ld2450Mux);
 }
 
 // Gaze source poll: nearest valid target within range, mapped by bearing

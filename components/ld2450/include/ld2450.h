@@ -31,8 +31,17 @@ typedef struct {
     float maxRangeM;        // Ignore targets farther than this
 } ld2450_config_t;
 
+// Counters for checking the wiring: bytes > 0 means the radar's TX reaches us, goodFrames > 0 means the baud rate is right
+typedef struct {
+    uint32_t bytes;         // Bytes received
+    uint32_t goodFrames;    // Frames with a valid header and tail (the radar sends about 10 a second)
+    uint32_t badFrames;     // Frames with a bad tail (noise or wrong baud rate)
+} ld2450_stats_t;
+
 esp_err_t ld2450Init(const ld2450_config_t *config);                    // Install UART and start the reader task
 int ld2450GetTargets(ld2450_target_t out[LD2450_MAX_TARGETS], uint32_t *ageMs);   // Copy latest frame, returns valid count
+
+void ld2450GetStats(ld2450_stats_t *out);                              // Copy the counters
 
 // Gaze source: nearest valid target, mapped to gaze x by bearing angle. Call ld2450Init first.
 extern const gaze_source_t gazeSourceLd2450;
