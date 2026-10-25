@@ -20,6 +20,8 @@ typedef struct {
     int16_t yMm;        // Distance out from the radar in mm
     int16_t speedCmS;   // Speed in cm/s, negative = approaching
     uint16_t resMm;     // Distance resolution in mm
+    bool held;          // true = position frozen, the radar is holding a track it lost (gaze ignores these)
+    bool parked;        // true = hasn't gone anywhere for 8 s: clutter like a fan or wall echo (gaze ignores these)
 } ld2450_target_t;
 
 typedef struct {
@@ -29,12 +31,22 @@ typedef struct {
     bool mirrorX;           // true = flip lateral sign so +x is the viewer's right
     float maxAngleDeg;      // Angle that maps to gaze x = +-1
     float maxRangeM;        // Ignore targets farther than this
+    float minRangeM;        // Ignore targets nearer than this
 } ld2450_config_t;
+
+// Counters for checking the wiring: bytes > 0 means the radar's TX reaches us, goodFrames > 0 means the baud rate is right
+typedef struct {
+    uint32_t bytes;         // Bytes received
+    uint32_t goodFrames;    // Frames with a valid header and tail (the radar sends about 10 a second)
+    uint32_t badFrames;     // Frames with a bad tail (noise or wrong baud rate)
+} ld2450_stats_t;
 
 esp_err_t ld2450Init(const ld2450_config_t *config);                    // Install UART and start the reader task
 int ld2450GetTargets(ld2450_target_t out[LD2450_MAX_TARGETS], uint32_t *ageMs);   // Copy latest frame, returns valid count
 
-// Gaze source: nearest valid target, mapped to gaze x by bearing angle. Call ld2450Init first.
+void ld2450GetStats(ld2450_stats_t *out);                              // Copy the counters
+
+// Gaze source: follows one moving person (nearest first), mapped to gaze x by bearing angle. Call ld2450Init first.
 extern const gaze_source_t gazeSourceLd2450;
 
 #ifdef __cplusplus

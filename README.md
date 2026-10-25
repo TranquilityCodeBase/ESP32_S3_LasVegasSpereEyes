@@ -63,9 +63,33 @@ then page-flips at the panel's frame boundary, so there is no tearing.
 
 ## Radar (LD2450)
 
-Not wired yet. Plan: radar TX to GPIO19, radar RX to GPIO20, 5 V and GND from the 12-pin header, then set
-`APP_RADAR_ENABLED 1`. GPIO43/44 reach the header only with the USB-C port unplugged, so they are not used.
-Untested on hardware: if the eyes look the wrong way, set `APP_RADAR_MIRROR_X true`.
+Master board only. Wiring: radar RX to GPIO19 (D-), radar TX to GPIO20 (D+), 5 V and GND from the 12-pin header.
+GPIO43/44 reach the header only with the USB-C port unplugged, so they are not used. GPIO19/20 are the chip's
+native USB pins, so `sdkconfig.defaults` turns native USB off (logs and flashing use the CH343 port).
+Point the radar's antenna side (the flat side with the gold patches, no parts on it) at the people.
+
+The log prints a radar line every second (`APP_RADAR_LOG_MS`): `0 bytes` means nothing reaches GPIO20 (wiring,
+power or ground), bytes with `0 good` frames means a wrong baud rate or noise, about 10 good frames a second means
+it works, followed by each target's x, y and speed and where the eyes are aiming.
+
+How the eyes pick who to follow (`components/ld2450/ld2450.c`):
+- Only people 0.5 to 6 m away (`APP_RADAR_MIN_RANGE_M`, `APP_RADAR_MAX_RANGE_M`).
+- Skip "held" targets (position frozen for 1.5 s: the radar repeating someone it lost) and "parked" ones
+  (moved less than 30 cm in 8 s: fans, wall echoes).
+- Stay with the person being followed until they are gone for 1 s, so a second person can't pull the eyes away.
+- Aim 150 ms ahead of their sideways motion to hide the radar's delay (`LD2450_LEAD_MS`).
+- Full eye swing at 30 degrees off center (`APP_RADAR_MAX_ANGLE`). Radar +x is the viewer's left, so
+  `APP_RADAR_MIRROR_X` is true.
+
+Keep metal (clips, stands) and other boards away from the antenna side: a metal clip beside the antenna and
+a mount turned 35 degrees both cost us one side of the view in testing.
+
+### Still to test (2026-10-25)
+
+Indoors the radar followed people well on the viewer's left (out to about 37 degrees) but lost them about
+10 degrees to the right, even with the sensor upside down, so the module looks fine and the room is the
+suspect. Next: test outside at the real spot (sidewalk 3 to 4 m out, people walking a straight line past).
+Check both sides track to about 30 degrees, then tune `APP_RADAR_MAX_ANGLE` and `LD2450_LEAD_MS` there.
 
 ## Two boards (ESP-NOW)
 
