@@ -21,6 +21,7 @@ typedef struct {
     int16_t speedCmS;   // Speed in cm/s, negative = approaching
     uint16_t resMm;     // Distance resolution in mm
     bool held;          // true = position frozen, the radar is holding a track it lost (gaze ignores these)
+    bool parked;        // true = hasn't gone anywhere for 8 s: clutter like a fan or wall echo (gaze ignores these)
 } ld2450_target_t;
 
 typedef struct {
@@ -44,7 +45,7 @@ int ld2450GetTargets(ld2450_target_t out[LD2450_MAX_TARGETS], uint32_t *ageMs); 
 
 void ld2450GetStats(ld2450_stats_t *out);                              // Copy the counters
 
-// Gaze source: nearest valid target, mapped to gaze x by bearing angle. Call ld2450Init first.
+// Gaze source: follows one moving person (nearest first), mapped to gaze x by bearing angle. Call ld2450Init first.
 extern const gaze_source_t gazeSourceLd2450;
 
 #ifdef __cplusplus
