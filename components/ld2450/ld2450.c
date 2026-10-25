@@ -18,7 +18,7 @@
 #define LD2450_PARKED_MM   300      // Moved less than this ...
 #define LD2450_PARKED_MS   8000     // ... for this long = parked (fan, wall echo, someone standing still)
 #define LD2450_LOCK_MM     800      // A target this close to where the followed person should be is them
-#define LD2450_LOCK_LOST_MS 600     // Follow someone else after losing the current person this long
+#define LD2450_LOCK_LOST_MS 1000    // Keep looking where the person was last seen this long, then follow someone else
 #define LD2450_LEAD_MS     150      // Aim this far ahead of the person to hide the radar's delay
 #define LD2450_PI          3.14159265f
 
