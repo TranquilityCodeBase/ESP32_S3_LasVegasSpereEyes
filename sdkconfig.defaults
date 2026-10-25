@@ -19,9 +19,13 @@ CONFIG_SPIRAM_XIP_FROM_PSRAM=y
 CONFIG_ESP32S3_DATA_CACHE_64KB=y
 CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 
-# RGB panel: ISR stays in IRAM, restart cleanly at vsync if the stream ever drifts
+# RGB panel: ISR stays in IRAM
 CONFIG_LCD_RGB_ISR_IRAM_SAFE=y
-CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
+# Keep "restart in vsync" OFF. In ESP-IDF 5.5 that option never resets the driver's bounce buffer
+# counter, so one missed refill interrupt leaves the picture slipped by one bounce buffer (20 lines)
+# until reboot: the top rows show up as a flat band at the bottom, and short stale lines appear at
+# the left edge every 20 lines. With it off, the driver checks each frame and resyncs by itself.
+CONFIG_LCD_RGB_RESTART_IN_VSYNC=n
 
 # Native USB off: logs and flashing use the CH343 port, and GPIO19/20 (native USB pins) carry the LD2450 radar UART
 CONFIG_USJ_ENABLE_USB_SERIAL_JTAG=n
