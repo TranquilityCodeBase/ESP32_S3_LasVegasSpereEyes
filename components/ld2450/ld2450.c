@@ -14,6 +14,7 @@
 #define LD2450_RX_BUF      1024     // UART driver RX ring buffer size
 #define LD2450_TIMEOUT_MS  500      // No frame for this long = no data
 #define LD2450_TASK_STACK  3072     // Reader task stack bytes
+#define LD2450_HELD_MS     1500     // Position unchanged this long = held track, not a person
 #define LD2450_PI          3.14159265f
 
 static const char *TAG = "ld2450";
@@ -56,6 +57,9 @@ static void ld2450Task(void *arg) {
     uint8_t frame[LD2450_FRAME_LEN];    // Frame being assembled
     int idx = 0;                        // Bytes collected so far
     uint8_t b;                          // Current byte
+    int16_t heldX[LD2450_MAX_TARGETS] = {0};            // Last position seen per slot
+    int16_t heldY[LD2450_MAX_TARGETS] = {0};
+    int64_t changedUs[LD2450_MAX_TARGETS] = {0};        // When that slot's position last changed
     while (true) {
         if (uart_read_bytes(ld2450Cfg.uartNum, &b, 1, pdMS_TO_TICKS(100)) != 1) {   // Wait for a byte
             continue;                                   // Timeout, try again
@@ -82,6 +86,16 @@ static void ld2450Task(void *arg) {
         ld2450_target_t parsed[LD2450_MAX_TARGETS];     // Parse outside the lock
         ld2450ParseFrame(frame, parsed);
         int64_t now = esp_timer_get_time();
+        // A real person's reading jitters a few mm every frame. When someone walks out of view the radar keeps
+        // repeating their last position, so a reading that hasn't changed at all for a while is a held track.
+        for (int i = 0; i < LD2450_MAX_TARGETS; i++) {
+            if (parsed[i].xMm != heldX[i] || parsed[i].yMm != heldY[i]) {
+                heldX[i] = parsed[i].xMm;               // Moved: remember where and when
+                heldY[i] = parsed[i].yMm;
+                changedUs[i] = now;
+            }
+            parsed[i].held = (now - changedUs[i]) > LD2450_HELD_MS * 1000LL;
+        }
         portENTER_CRITICAL(&ld2450Mux);
         memcpy(ld2450Latest, parsed, sizeof(parsed));   // Publish targets
         ld2450StampUs = now;                            // And their timestamp
@@ -155,7 +169,7 @@ static bool ld2450Poll(uint32_t nowMs, gaze_target_t *out) {
     float bestDistMm = ld2450Cfg.maxRangeM * 1000.0f;   // Only accept targets inside range
     int best = -1;                                      // Index of the nearest target
     for (int i = 0; i < LD2450_MAX_TARGETS; i++) {
-        if (!t[i].valid) continue;
+        if (!t[i].valid || t[i].held) continue;         // Empty slot, or a lost track the radar is still repeating
         float d = hypotf((float)t[i].xMm, (float)t[i].yMm);
         if (d <= bestDistMm) {
             bestDistMm = d;

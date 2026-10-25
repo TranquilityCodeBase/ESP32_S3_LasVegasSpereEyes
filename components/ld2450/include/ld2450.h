@@ -20,6 +20,7 @@ typedef struct {
     int16_t yMm;        // Distance out from the radar in mm
     int16_t speedCmS;   // Speed in cm/s, negative = approaching
     uint16_t resMm;     // Distance resolution in mm
+    bool held;          // true = position frozen, the radar is holding a track it lost (gaze ignores these)
 } ld2450_target_t;
 
 typedef struct {

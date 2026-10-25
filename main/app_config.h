@@ -59,7 +59,7 @@
 #define APP_RADAR_RX_PIN        BOARD_PIN_HEADER_IO20
 #define APP_RADAR_TX_PIN        BOARD_PIN_HEADER_IO19
 #define APP_RADAR_MIRROR_X      true        // Radar +x is the viewer's left (checked 2026-10-25), flip so +x is their right
-#define APP_RADAR_MAX_ANGLE     60.0f       // Bearing (degrees) that maps to the edge of the gaze range
+#define APP_RADAR_MAX_ANGLE     40.0f       // Bearing (degrees) that maps to the edge of the gaze range (smaller = eyes move more)
 #define APP_RADAR_MAX_RANGE_M   5.0f        // Ignore people farther than this
 
 // ---------- ESP-NOW sync between the two boards ----------

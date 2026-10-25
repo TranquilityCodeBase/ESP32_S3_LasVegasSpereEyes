@@ -131,7 +131,12 @@ static void radarLogTask(void *arg) {
                  (unsigned long)(now.badFrames - last.badFrames), APP_RADAR_LOG_MS, count);
         for (int i = 0; i < LD2450_MAX_TARGETS && ageMs < 500; i++) {   // Only fresh targets
             if (!t[i].valid) continue;
-            ESP_LOGI(TAG, "  target %d: x %d mm, y %d mm, speed %d cm/s", i + 1, t[i].xMm, t[i].yMm, t[i].speedCmS);
+            ESP_LOGI(TAG, "  target %d: x %d mm, y %d mm, speed %d cm/s%s", i + 1, t[i].xMm, t[i].yMm, t[i].speedCmS,
+                     t[i].held ? " (held, ignored)" : "");
+        }
+        gaze_target_t gaze;
+        if (gazeSourceLd2450.poll(nowMs(), &gaze)) {                    // Where the radar would point the eyes
+            ESP_LOGI(TAG, "  gaze x %.2f at %.1f m", gaze.x, gaze.distanceM);
         }
         last = now;
     }
