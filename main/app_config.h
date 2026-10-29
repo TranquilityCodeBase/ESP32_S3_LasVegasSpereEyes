@@ -66,7 +66,8 @@
                                             // Upright, it tracked to about 45 degrees each side at 2 m (2026-10-29).
 #define APP_RADAR_MAX_RANGE_M   6.0f        // Ignore people farther than this (the radar's own limit is 6 m)
 #define APP_RADAR_MIN_RANGE_M   0.0f        // Ignore anything nearer than this (was 0.5 for a clip in front of the flat module)
-#define APP_RADAR_HELD_MS       1500        // Skip a position frozen this long, the radar repeating someone it lost (0 = off)
+#define APP_RADAR_HELD_MS       3000        // Skip a position frozen this long, the radar repeating someone it lost (0 = off).
+                                            // Not shorter: in single mode it repeats a still person for about 1.5 s too.
 #define APP_RADAR_PARKED_MS     0           // Skip targets that moved under 30 cm in this long, clutter (0 = off; was 8000)
 #define APP_RADAR_LOCK_LOST_MS  1500        // Keep looking where the person was last seen this long (bridges short dropouts at the edges)
 #define APP_RADAR_LEAD_MS       0           // Aim this far ahead of the person (0 = off; was 150, re-tune after the timing test)
