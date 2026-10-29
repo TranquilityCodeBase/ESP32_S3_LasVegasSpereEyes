@@ -54,14 +54,22 @@
 // GPIO19/20 are the chip's native USB pins: sdkconfig.defaults turns native USB off so the UART gets them.
 #define APP_RADAR_ENABLED       (APP_SYNC_ROLE != 2)   // The slave has no radar, it gets the gaze over ESP-NOW
 #define APP_RADAR_GAZE          1           // 1 = eyes follow the radar, 0 = radar is only logged (bring-up)
-#define APP_RADAR_LOG_MS        1000        // Print radar counters and targets this often (0 = never)
+#define APP_RADAR_LOG_MS        1000        // Print radar counters and where the eyes aim this often (0 = never)
 #define APP_RADAR_UART          UART_NUM_1
 #define APP_RADAR_RX_PIN        BOARD_PIN_HEADER_IO20
 #define APP_RADAR_TX_PIN        BOARD_PIN_HEADER_IO19
-#define APP_RADAR_MIRROR_X      true        // Radar +x is the viewer's left (checked 2026-10-25), flip so +x is their right
+// Mount the module upright (long edge vertical, large copper pour at the top), antenna side facing the street.
+// The settings below were tuned 2026-10-25 with the module lying flat, which cut its view to one side.
+// Re-check them with the module upright: tools/radar_capture.py records walks and prints a summary.
+#define APP_RADAR_MIRROR_X      true        // Radar +x is the viewer's left (checked flat 2026-10-25: re-check upright)
 #define APP_RADAR_MAX_ANGLE     30.0f       // Bearing (degrees) that maps to the edge of the gaze range (smaller = eyes move more)
-#define APP_RADAR_MAX_RANGE_M   6.0f        // Ignore people farther than this (fixed clutter is filtered out as "parked")
-#define APP_RADAR_MIN_RANGE_M   0.5f        // Ignore anything nearer than this (the stand, a hand on the sensor)
+#define APP_RADAR_MAX_RANGE_M   6.0f        // Ignore people farther than this (the radar's own limit is 6 m)
+#define APP_RADAR_MIN_RANGE_M   0.0f        // Ignore anything nearer than this (was 0.5 for a clip in front of the flat module)
+#define APP_RADAR_HELD_MS       1500        // Skip a position frozen this long, the radar repeating someone it lost (0 = off)
+#define APP_RADAR_PARKED_MS     0           // Skip targets that moved under 30 cm in this long, clutter (0 = off; was 8000)
+#define APP_RADAR_LOCK_LOST_MS  1000        // Keep looking where the person was last seen this long
+#define APP_RADAR_LEAD_MS       0           // Aim this far ahead of the person (0 = off; was 150, re-tune after the timing test)
+#define APP_RADAR_TRACE         1           // 1 = print every radar frame for tools/radar_capture.py (test sessions)
 
 // ---------- ESP-NOW sync between the two boards ----------
 // 0 = off, 1 = master (sends gaze and blinks), 2 = slave (copies the master). Set by the project CMakeLists.txt.
@@ -70,3 +78,6 @@
 #endif
 #define APP_SYNC_CHANNEL        1           // Same Wi-Fi channel on both boards
 #define APP_SYNC_GROUP_ID       0x51        // Same on both boards; change it if two pairs share a room
+#define APP_BLINK_SYNC_LEAD_MS  20          // Master shows each blink this long after sending it, so the slave
+                                            // (which starts on its next frame, 0 to 33 ms later) blinks with it.
+                                            // Tune from the "Blink start" log times on both boards.

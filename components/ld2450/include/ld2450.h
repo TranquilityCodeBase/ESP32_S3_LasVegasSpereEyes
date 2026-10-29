@@ -20,8 +20,8 @@ typedef struct {
     int16_t yMm;        // Distance out from the radar in mm
     int16_t speedCmS;   // Speed in cm/s, negative = approaching
     uint16_t resMm;     // Distance resolution in mm
-    bool held;          // true = position frozen, the radar is holding a track it lost (gaze ignores these)
-    bool parked;        // true = hasn't gone anywhere for 8 s: clutter like a fan or wall echo (gaze ignores these)
+    bool held;          // true = position frozen for heldMs: the radar is repeating a track it lost
+    bool parked;        // true = moved under 30 cm in parkedMs: clutter like a fan or wall echo
 } ld2450_target_t;
 
 typedef struct {
@@ -32,6 +32,11 @@ typedef struct {
     float maxAngleDeg;      // Angle that maps to gaze x = +-1
     float maxRangeM;        // Ignore targets farther than this
     float minRangeM;        // Ignore targets nearer than this
+    uint32_t heldMs;        // Position frozen this long = lost track the radar is repeating, skip it (0 = off)
+    uint32_t parkedMs;      // Moved under 30 cm this long = clutter, skip it (0 = off)
+    uint32_t lockLostMs;    // Keep looking where the followed person was last seen this long
+    uint32_t leadMs;        // Aim this far ahead of the person's sideways motion (0 = off)
+    bool trace;             // Print every frame ("RT ms x,y,speed,res ...") for tools/radar_capture.py
 } ld2450_config_t;
 
 // Counters for checking the wiring: bytes > 0 means the radar's TX reaches us, goodFrames > 0 means the baud rate is right

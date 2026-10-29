@@ -1,5 +1,6 @@
 // ld2450.c - HLK-LD2450 radar driver: UART frame parser, reader task and gaze source.
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -14,12 +15,8 @@
 #define LD2450_RX_BUF      1024     // UART driver RX ring buffer size
 #define LD2450_TIMEOUT_MS  500      // No frame for this long = no data
 #define LD2450_TASK_STACK  3072     // Reader task stack bytes
-#define LD2450_HELD_MS     1500     // Position unchanged this long = held track, not a person
-#define LD2450_PARKED_MM   300      // Moved less than this ...
-#define LD2450_PARKED_MS   8000     // ... for this long = parked (fan, wall echo, someone standing still)
+#define LD2450_PARKED_MM   300      // Moved less than this for parkedMs = parked (fan, wall echo)
 #define LD2450_LOCK_MM     800      // A target this close to where the followed person should be is them
-#define LD2450_LOCK_LOST_MS 1000    // Keep looking where the person was last seen this long, then follow someone else
-#define LD2450_LEAD_MS     150      // Aim this far ahead of the person to hide the radar's delay
 #define LD2450_PI          3.14159265f
 
 static const char *TAG = "ld2450";
@@ -102,14 +99,22 @@ static void ld2450Task(void *arg) {
                 heldY[i] = parsed[i].yMm;
                 changedUs[i] = now;
             }
-            parsed[i].held = (now - changedUs[i]) > LD2450_HELD_MS * 1000LL;
+            parsed[i].held = ld2450Cfg.heldMs > 0 && (now - changedUs[i]) > ld2450Cfg.heldMs * 1000LL;
             // Clutter (a fan, an echo off a wall) jitters but stays put. People walk somewhere.
             if (hypotf((float)(parsed[i].xMm - anchorX[i]), (float)(parsed[i].yMm - anchorY[i])) > LD2450_PARKED_MM) {
                 anchorX[i] = parsed[i].xMm;
                 anchorY[i] = parsed[i].yMm;
                 movedUs[i] = now;
             }
-            parsed[i].parked = (now - movedUs[i]) > LD2450_PARKED_MS * 1000LL;
+            parsed[i].parked = ld2450Cfg.parkedMs > 0 && (now - movedUs[i]) > ld2450Cfg.parkedMs * 1000LL;
+        }
+        if (ld2450Cfg.trace) {                          // One line per frame for the PC capture script
+            printf("RT %lld", now / 1000);              // Frame time, ms since boot
+            for (int i = 0; i < LD2450_MAX_TARGETS; i++) {
+                if (!parsed[i].valid) printf(" -");     // Empty slot
+                else printf(" %d,%d,%d,%u", parsed[i].xMm, parsed[i].yMm, parsed[i].speedCmS, parsed[i].resMm);
+            }
+            printf("\n");
         }
         portENTER_CRITICAL(&ld2450Mux);
         memcpy(ld2450Latest, parsed, sizeof(parsed));   // Publish targets
@@ -174,7 +179,7 @@ void ld2450GetStats(ld2450_stats_t *out) {
 }
 
 // Gaze source poll. Follows one person: who we follow keeps being followed until they are gone for
-// LD2450_LOCK_LOST_MS, so a second person nearer the radar doesn't make the eyes flick between them.
+// lockLostMs, so a second person nearer the radar doesn't make the eyes flick between them.
 // Only people who have moved recently count, and the eyes aim slightly ahead of them to hide the radar's delay.
 static bool ld2450Poll(uint32_t nowMs, gaze_target_t *out) {
     static int64_t seenStampUs;                         // Radar frame already used
@@ -182,6 +187,7 @@ static bool ld2450Poll(uint32_t nowMs, gaze_target_t *out) {
     static float lockX, lockY;                          // Their position, mm
     static float lockVx;                                // Their sideways speed, mm/s (smoothed)
     static int64_t lockSeenUs;                          // When they were last matched
+    static int64_t tracedStampUs;                       // Frame whose gaze was last traced
     (void)nowMs;                                        // Uses the radar's own frame times
     if (!ld2450Started || out == NULL) return false;
     ld2450_target_t t[LD2450_MAX_TARGETS];
@@ -200,7 +206,8 @@ static bool ld2450Poll(uint32_t nowMs, gaze_target_t *out) {
         int best = -1;                                  // Candidate to follow
         float bestScore = 1e9f;
         for (int i = 0; i < LD2450_MAX_TARGETS; i++) {
-            if (!t[i].valid || t[i].held || t[i].parked) continue;   // Not a person on the move
+            if (!t[i].valid) continue;                                          // Empty slot
+            if (t[i].held || t[i].parked) continue;                             // Lost track, or clutter (when those filters are on)
             float distMm = hypotf((float)t[i].xMm, (float)t[i].yMm);
             if (distMm > maxMm || distMm < minMm) continue;                  // Too far away, or too close to be a passer-by
             float score = locked ? hypotf(t[i].xMm - predX, t[i].yMm - lockY)   // Nearest to the followed person
@@ -222,19 +229,23 @@ static bool ld2450Poll(uint32_t nowMs, gaze_target_t *out) {
             lockY = t[best].yMm;
             lockSeenUs = stamp;
             locked = true;
-        } else if (locked && stamp - lockSeenUs > LD2450_LOCK_LOST_MS * 1000LL) {
+        } else if (locked && stamp - lockSeenUs > ld2450Cfg.lockLostMs * 1000LL) {
             locked = false;                             // Gone: next frame picks whoever is nearest
         }
         seenStampUs = stamp;
     }
-    if (!locked || stamp - lockSeenUs > LD2450_LOCK_LOST_MS * 1000LL) return false;
+    if (!locked || stamp - lockSeenUs > ld2450Cfg.lockLostMs * 1000LL) return false;
 
-    float aimX = lockX + lockVx * LD2450_LEAD_MS / 1000.0f;   // A little ahead of the person
+    float aimX = lockX + lockVx * ld2450Cfg.leadMs / 1000.0f;  // A little ahead of the person
     float bearingDeg = atan2f(aimX, lockY) * 180.0f / LD2450_PI;   // 0 = straight ahead
     float gx = (ld2450Cfg.maxAngleDeg > 0.0f) ? bearingDeg / ld2450Cfg.maxAngleDeg : 0.0f;
     if (ld2450Cfg.mirrorX) gx = -gx;                    // Flip for mounting
     if (gx > 1.0f) gx = 1.0f;                           // Clamp to the gaze range
     if (gx < -1.0f) gx = -1.0f;
+    if (ld2450Cfg.trace && stamp == seenStampUs && stamp != tracedStampUs) {
+        printf("RG %lld %.3f\n", stamp / 1000, gx);    // Where this frame points the eyes, for the timing check
+        tracedStampUs = stamp;
+    }
     out->x = gx;
     out->y = 0.0f;                                      // Radar has no height info
     out->distanceM = hypotf(lockX, lockY) / 1000.0f;

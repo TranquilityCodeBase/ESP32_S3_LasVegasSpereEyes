@@ -30,6 +30,9 @@ static uint32_t nextBlinkMs;            // When the next random blink starts
 static uint32_t blinkSeq;               // Blinks started so far
 static uint8_t blinkIndex;              // Last effect index
 static int pendingBlink = -1;           // Blink requested from outside, started on the next update
+static uint32_t blinkLeadMs;            // Sync leader: announce a blink this long before showing it
+static int scheduledBlink = -1;         // Announced blink waiting for its start time, or -1
+static uint32_t scheduledAtMs;          // When it starts
 
 static uint32_t randBetween(uint32_t lo, uint32_t hi) {
     return lo + esp_random() % (hi - lo + 1);
@@ -57,13 +60,24 @@ static void springStep(float *pos, float *vel, float target, float dt) {
     *vel = (*vel - GAZE_OMEGA * tmp) * decay;
 }
 
+// Announce a blink (the sync leader sends blinkSeq to the follower right away) and show it blinkLeadMs later,
+// so the follower, which only hears about it over the radio, starts on the same frame.
 static void beginBlink(int index, uint32_t nowMs) {
     if (index < 0 || index >= blinkEffectCount) return;
-    blink = blinkEffectTable[index];
-    blinkStartMs = nowMs;
     blinkIndex = (uint8_t)index;
     blinkSeq++;                                                     // Lets the sync leader tell the follower
-    nextBlinkMs = nowMs + blink->durationMs + randBetween(BLINK_MIN_MS, BLINK_MAX_MS);
+    scheduledBlink = index;
+    scheduledAtMs = nowMs + blinkLeadMs;
+    nextBlinkMs = scheduledAtMs + blinkEffectTable[index]->durationMs + randBetween(BLINK_MIN_MS, BLINK_MAX_MS);
+}
+
+// Start showing the announced blink once its time comes
+static void showScheduledBlink(uint32_t nowMs) {
+    if (scheduledBlink < 0 || (int32_t)(nowMs - scheduledAtMs) < 0) return;
+    blink = blinkEffectTable[scheduledBlink];
+    blinkStartMs = nowMs;
+    scheduledBlink = -1;
+    ESP_LOGI(TAG, "Blink start: %s", blink->name);                  // PC-timestamped on both boards to check sync
 }
 
 void eyeAnimatorInit(const gaze_source_t *const *sources, int count) {
@@ -83,6 +97,10 @@ void eyeAnimatorStartBlink(int effectIndex) {
 
 void eyeAnimatorSetAutoBlink(bool enabled) {
     autoBlink = enabled;
+}
+
+void eyeAnimatorSetBlinkLead(uint32_t leadMs) {
+    blinkLeadMs = leadMs;
 }
 
 uint32_t eyeAnimatorBlinkSeq(uint8_t *lastIndex) {
@@ -112,7 +130,7 @@ void eyeAnimatorUpdate(uint32_t nowMs, face_state_t *out) {
     activeSource = winner;
     if (winner >= 0) {
         float jump = fabsf(target.x - lastTarget.x) + fabsf(target.y - lastTarget.y);
-        if (jump > SACCADE_BLINK_JUMP && autoBlink && !blink && (int)(esp_random() % 100) < SACCADE_BLINK_PCT) {
+        if (jump > SACCADE_BLINK_JUMP && autoBlink && !blink && scheduledBlink < 0 && (int)(esp_random() % 100) < SACCADE_BLINK_PCT) {
             pendingBlink = 0;                                       // Big look-away: blink like a person does
         }
         lastTarget = target;
@@ -126,9 +144,10 @@ void eyeAnimatorUpdate(uint32_t nowMs, face_state_t *out) {
     if (pendingBlink >= 0) {
         beginBlink(pendingBlink, nowMs);
         pendingBlink = -1;
-    } else if (autoBlink && !blink && (int32_t)(nowMs - nextBlinkMs) >= 0) {
+    } else if (autoBlink && !blink && scheduledBlink < 0 && (int32_t)(nowMs - nextBlinkMs) >= 0) {
         beginBlink(pickBlinkIndex(), nowMs);
     }
+    showScheduledBlink(nowMs);
     float openL = 1.0f, openR = 1.0f;
     if (blink) {
         float t = (float)(nowMs - blinkStartMs) / blink->durationMs;
