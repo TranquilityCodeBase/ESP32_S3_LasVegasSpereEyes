@@ -242,6 +242,7 @@ void app_main(void) {
         .txPin = APP_RADAR_TX_PIN,
         .mirrorX = APP_RADAR_MIRROR_X,
         .maxAngleDeg = APP_RADAR_MAX_ANGLE,
+        .centerDeg = APP_RADAR_CENTER_DEG,
         .maxRangeM = APP_RADAR_MAX_RANGE_M,
         .minRangeM = APP_RADAR_MIN_RANGE_M,
         .heldMs = APP_RADAR_HELD_MS,

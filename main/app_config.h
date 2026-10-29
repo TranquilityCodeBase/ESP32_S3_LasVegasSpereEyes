@@ -64,6 +64,10 @@
 #define APP_RADAR_MIRROR_X      true        // Radar +x is the viewer's left (checked flat 2026-10-25: re-check upright)
 #define APP_RADAR_MAX_ANGLE     45.0f       // Bearing (degrees) that maps to the edge of the gaze range (smaller = eyes move more).
                                             // Upright, it tracked to about 45 degrees each side at 2 m (2026-10-29).
+#define APP_RADAR_CENTER_DEG    5.0f        // Where "straight ahead" is in radar bearing (radar +x = viewer's left positive).
+                                            // Measured 2026-10-29 in the pumpkin: someone dead ahead at 2 m read +5 degrees
+                                            // (sensor glued turned slightly), and it reached +56 vs -43 at the sides.
+                                            // Re-measure if the sensor is re-glued: see README "Finding center".
 #define APP_RADAR_MAX_RANGE_M   6.0f        // Ignore people farther than this (the radar's own limit is 6 m)
 #define APP_RADAR_MIN_RANGE_M   0.0f        // Ignore anything nearer than this (was 0.5 for a clip in front of the flat module)
 #define APP_RADAR_HELD_MS       3000        // Skip a position frozen this long, the radar repeating someone it lost (0 = off).

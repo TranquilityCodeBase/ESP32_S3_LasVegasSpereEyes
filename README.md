@@ -90,6 +90,13 @@ The radar itself has no range or sensitivity setting. It offers two, sent at sta
 single or multi-target mode (`APP_RADAR_TARGET_MODE`) and a zone filter (`APP_RADAR_ZONE_*`, one rectangle in
 radar coordinates, e.g. the sidewalk). Both default to -1 (leave as they are); the log confirms each one.
 
+### Finding center
+
+The sensor in the pumpkin is glued turned about 5 degrees toward the viewer's left, so `APP_RADAR_CENTER_DEG` is 5.0
+(measured 2026-10-29: someone standing dead ahead of the eyes at 2 m read +5 degrees). If the sensor is moved or
+re-glued: stand still dead ahead of the eyes at 2 m, run `py tools/radar_capture.py --seconds 20`, and set
+`APP_RADAR_CENTER_DEG` to the bearing it prints (keep its sign, with `APP_RADAR_MIRROR_X` true).
+
 ### Re-test with the module upright (to do)
 
 The 2026-10-25 settings were workarounds for the flat module. For the re-test, parked filter, lead and minimum

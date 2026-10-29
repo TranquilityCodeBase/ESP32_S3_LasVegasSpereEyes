@@ -339,7 +339,7 @@ static bool ld2450Poll(uint32_t nowMs, gaze_target_t *out) {
     if (!locked || stamp - lockSeenUs > ld2450Cfg.lockLostMs * 1000LL) return false;
 
     float aimX = lockX + lockVx * ld2450Cfg.leadMs / 1000.0f;  // A little ahead of the person
-    float bearingDeg = atan2f(aimX, lockY) * 180.0f / LD2450_PI;   // 0 = straight ahead
+    float bearingDeg = atan2f(aimX, lockY) * 180.0f / LD2450_PI - ld2450Cfg.centerDeg;   // 0 = the eyes' straight ahead
     float gx = (ld2450Cfg.maxAngleDeg > 0.0f) ? bearingDeg / ld2450Cfg.maxAngleDeg : 0.0f;
     if (ld2450Cfg.mirrorX) gx = -gx;                    // Flip for mounting
     if (gx > 1.0f) gx = 1.0f;                           // Clamp to the gaze range

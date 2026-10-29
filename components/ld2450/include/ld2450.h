@@ -30,6 +30,7 @@ typedef struct {
     int txPin;              // ESP TX -> radar RX
     bool mirrorX;           // true = flip lateral sign so +x is the viewer's right
     float maxAngleDeg;      // Angle that maps to gaze x = +-1
+    float centerDeg;        // Radar bearing (radar +x side positive) of the eyes' straight ahead, for a module mounted turned
     float maxRangeM;        // Ignore targets farther than this
     float minRangeM;        // Ignore targets nearer than this
     uint32_t heldMs;        // Position frozen this long = lost track the radar is repeating, skip it (0 = off)
