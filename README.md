@@ -66,30 +66,44 @@ then page-flips at the panel's frame boundary, so there is no tearing.
 Master board only. Wiring: radar RX to GPIO19 (D-), radar TX to GPIO20 (D+), 5 V and GND from the 12-pin header.
 GPIO43/44 reach the header only with the USB-C port unplugged, so they are not used. GPIO19/20 are the chip's
 native USB pins, so `sdkconfig.defaults` turns native USB off (logs and flashing use the CH343 port).
-Point the radar's antenna side (the flat side with the gold patches, no parts on it) at the people.
+**Mounting:** module upright (long 44 mm edge vertical, the large copper pour at the top), antenna side (gold
+patches) facing the people. Lying flat it only sees a narrow slice to one side, which is what went wrong on
+2026-10-25. Per the Hi-Link manual: ideally 1.5 to 2 m high, nothing metal near the antenna, and a cover
+(the pumpkin) of thin, even plastic with no metallic paint, about 12 or 19 mm in front of the antenna face.
 
 The log prints a radar line every second (`APP_RADAR_LOG_MS`): `0 bytes` means nothing reaches GPIO20 (wiring,
 power or ground), bytes with `0 good` frames means a wrong baud rate or noise, about 10 good frames a second means
-it works, followed by each target's x, y and speed and where the eyes are aiming.
+it works, then where the eyes are aiming. With `APP_RADAR_TRACE 1` every frame is printed as an `RT` line for
+`tools/radar_capture.py`, which records a walk and prints the frame rate, each second's nearest target and bearing,
+the widest bearing on each side, still-target jitter and frozen repeats. With `--slave COM7` it also measures how
+far apart the two eyes' blinks start.
 
-How the eyes pick who to follow (`components/ld2450/ld2450.c`):
-- Only people 0.5 to 6 m away (`APP_RADAR_MIN_RANGE_M`, `APP_RADAR_MAX_RANGE_M`).
-- Skip "held" targets (position frozen for 1.5 s: the radar repeating someone it lost) and "parked" ones
-  (moved less than 30 cm in 8 s: fans, wall echoes).
-- Stay with the person being followed until they are gone for 1 s, so a second person can't pull the eyes away.
-- Aim 150 ms ahead of their sideways motion to hide the radar's delay (`LD2450_LEAD_MS`).
-- Full eye swing at 30 degrees off center (`APP_RADAR_MAX_ANGLE`). Radar +x is the viewer's left, so
-  `APP_RADAR_MIRROR_X` is true.
+How the eyes pick who to follow (`components/ld2450/ld2450.c`, all set in `main/app_config.h`):
+- Only targets between `APP_RADAR_MIN_RANGE_M` and `APP_RADAR_MAX_RANGE_M`.
+- Optionally skip "held" targets (`APP_RADAR_HELD_MS`: position frozen, the radar repeating someone it lost) and
+  "parked" ones (`APP_RADAR_PARKED_MS`: moved under 30 cm in that time, like a fan). 0 turns a filter off.
+- Stay with the person being followed until they are gone for `APP_RADAR_LOCK_LOST_MS`.
+- Optionally aim `APP_RADAR_LEAD_MS` ahead of their sideways motion to hide the radar's delay.
+- Full eye swing at `APP_RADAR_MAX_ANGLE` degrees off center; `APP_RADAR_MIRROR_X` sets which side is which.
 
-Keep metal (clips, stands) and other boards away from the antenna side: a metal clip beside the antenna and
-a mount turned 35 degrees both cost us one side of the view in testing.
+The radar itself has no range or sensitivity setting. It offers two, sent at start and remembered by the radar:
+single or multi-target mode (`APP_RADAR_TARGET_MODE`) and a zone filter (`APP_RADAR_ZONE_*`, one rectangle in
+radar coordinates, e.g. the sidewalk). Both default to -1 (leave as they are); the log confirms each one.
 
-### Still to test (2026-10-25)
+### Finding center
 
-Indoors the radar followed people well on the viewer's left (out to about 37 degrees) but lost them about
-10 degrees to the right, even with the sensor upside down, so the module looks fine and the room is the
-suspect. Next: test outside at the real spot (sidewalk 3 to 4 m out, people walking a straight line past).
-Check both sides track to about 30 degrees, then tune `APP_RADAR_MAX_ANGLE` and `LD2450_LEAD_MS` there.
+The sensor in the pumpkin is glued turned about 5 degrees toward the viewer's left, so `APP_RADAR_CENTER_DEG` is 5.0
+(measured 2026-10-29: someone standing dead ahead of the eyes at 2 m read +5 degrees). If the sensor is moved or
+re-glued: stand still dead ahead of the eyes at 2 m, run `py tools/radar_capture.py --seconds 20`, and set
+`APP_RADAR_CENTER_DEG` to the bearing it prints (keep its sign, with `APP_RADAR_MIRROR_X` true).
+
+### Tuning (2026-10-29, upright in the pumpkin, walking at 2 m)
+
+Single-target mode reports about 19 times a second while someone is in view. Tracks to about 45 degrees each
+side, with short dropouts beyond that, so `APP_RADAR_MAX_ANGLE` is 45 and `APP_RADAR_LOCK_LOST_MS` 1.5 s bridges
+them. A still person jitters about 8 to 10 cm at 2 m, smoothed by `APP_RADAR_SMOOTH_MS` 150. In single mode
+the radar repeats a still person's exact position for about 1.5 s, so the held filter is 3 s. Parked filter,
+lead and minimum range are off. Blinks: both eyes start within one 33 ms frame (`APP_BLINK_SYNC_LEAD_MS`).
 
 ## Two boards (ESP-NOW)
 

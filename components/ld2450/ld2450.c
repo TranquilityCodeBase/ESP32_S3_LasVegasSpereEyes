@@ -1,5 +1,6 @@
 // ld2450.c - HLK-LD2450 radar driver: UART frame parser, reader task and gaze source.
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -14,12 +15,8 @@
 #define LD2450_RX_BUF      1024     // UART driver RX ring buffer size
 #define LD2450_TIMEOUT_MS  500      // No frame for this long = no data
 #define LD2450_TASK_STACK  3072     // Reader task stack bytes
-#define LD2450_HELD_MS     1500     // Position unchanged this long = held track, not a person
-#define LD2450_PARKED_MM   300      // Moved less than this ...
-#define LD2450_PARKED_MS   8000     // ... for this long = parked (fan, wall echo, someone standing still)
+#define LD2450_PARKED_MM   300      // Moved less than this for parkedMs = parked (fan, wall echo)
 #define LD2450_LOCK_MM     800      // A target this close to where the followed person should be is them
-#define LD2450_LOCK_LOST_MS 1000    // Keep looking where the person was last seen this long, then follow someone else
-#define LD2450_LEAD_MS     150      // Aim this far ahead of the person to hide the radar's delay
 #define LD2450_PI          3.14159265f
 
 static const char *TAG = "ld2450";
@@ -102,14 +99,22 @@ static void ld2450Task(void *arg) {
                 heldY[i] = parsed[i].yMm;
                 changedUs[i] = now;
             }
-            parsed[i].held = (now - changedUs[i]) > LD2450_HELD_MS * 1000LL;
+            parsed[i].held = ld2450Cfg.heldMs > 0 && (now - changedUs[i]) > ld2450Cfg.heldMs * 1000LL;
             // Clutter (a fan, an echo off a wall) jitters but stays put. People walk somewhere.
             if (hypotf((float)(parsed[i].xMm - anchorX[i]), (float)(parsed[i].yMm - anchorY[i])) > LD2450_PARKED_MM) {
                 anchorX[i] = parsed[i].xMm;
                 anchorY[i] = parsed[i].yMm;
                 movedUs[i] = now;
             }
-            parsed[i].parked = (now - movedUs[i]) > LD2450_PARKED_MS * 1000LL;
+            parsed[i].parked = ld2450Cfg.parkedMs > 0 && (now - movedUs[i]) > ld2450Cfg.parkedMs * 1000LL;
+        }
+        if (ld2450Cfg.trace) {                          // One line per frame for the PC capture script
+            printf("RT %lld", now / 1000);              // Frame time, ms since boot
+            for (int i = 0; i < LD2450_MAX_TARGETS; i++) {
+                if (!parsed[i].valid) printf(" -");     // Empty slot
+                else printf(" %d,%d,%d,%u", parsed[i].xMm, parsed[i].yMm, parsed[i].speedCmS, parsed[i].resMm);
+            }
+            printf("\n");
         }
         portENTER_CRITICAL(&ld2450Mux);
         memcpy(ld2450Latest, parsed, sizeof(parsed));   // Publish targets
@@ -117,6 +122,103 @@ static void ld2450Task(void *arg) {
         ld2450Counts.goodFrames++;
         portEXIT_CRITICAL(&ld2450Mux);
     }
+}
+
+// ---------- Radar settings over the serial link (Hi-Link LD2450 serial command protocol) ----------
+// Command frame: FD FC FB FA, length (2 bytes, of command + value), command (2), value, 04 03 02 01.
+// The radar answers with the same header, command | 0x0100, and a status word (0 = done).
+
+// Send one command and wait for its answer. reply gets the answer's value bytes after the status word.
+static bool ld2450Command(uint16_t cmd, const uint8_t *value, int valueLen, uint8_t *reply, int replyMax) {
+    static const uint8_t head[4] = {0xFD, 0xFC, 0xFB, 0xFA};
+    static const uint8_t tail[4] = {0x04, 0x03, 0x02, 0x01};
+    uint8_t out[48];
+    int n = 0;
+    memcpy(out, head, 4);
+    n = 4;
+    out[n++] = (uint8_t)(2 + valueLen);                                 // Length of command + value
+    out[n++] = 0;
+    out[n++] = (uint8_t)cmd;
+    out[n++] = (uint8_t)(cmd >> 8);
+    if (valueLen > 0) {
+        memcpy(out + n, value, valueLen);
+        n += valueLen;
+    }
+    memcpy(out + n, tail, 4);
+    n += 4;
+    uart_flush_input(ld2450Cfg.uartNum);
+    uart_write_bytes(ld2450Cfg.uartNum, out, n);
+
+    // Hunt for the answer header among the data frames still streaming in
+    int64_t deadline = esp_timer_get_time() + 500000;
+    int matched = 0;
+    int seen = 0;                                                       // Bytes received while waiting, for the log
+    uint8_t b;
+    while (esp_timer_get_time() < deadline) {
+        if (uart_read_bytes(ld2450Cfg.uartNum, &b, 1, pdMS_TO_TICKS(20)) != 1) continue;
+        seen++;
+        matched = (b == head[matched]) ? matched + 1 : (b == head[0] ? 1 : 0);
+        if (matched < 4) continue;
+        uint8_t hdr[6];                                                 // Length, command | 0x0100, status
+        if (uart_read_bytes(ld2450Cfg.uartNum, hdr, 6, pdMS_TO_TICKS(50)) != 6) return false;
+        int len = hdr[0] | (hdr[1] << 8);
+        uint16_t ackCmd = (uint16_t)(hdr[2] | (hdr[3] << 8));
+        uint16_t status = (uint16_t)(hdr[4] | (hdr[5] << 8));
+        uint8_t rest[40];
+        int restLen = len - 4;                                          // Value bytes after the status word
+        if (restLen < 0 || restLen > (int)sizeof(rest)) return false;
+        if (restLen > 0 && uart_read_bytes(ld2450Cfg.uartNum, rest, restLen, pdMS_TO_TICKS(50)) != restLen) return false;
+        if (reply != NULL) memcpy(reply, rest, restLen < replyMax ? restLen : replyMax);
+        if (ackCmd != (cmd | 0x0100) || status != 0) {
+            ESP_LOGW(TAG, "Command 0x%04x answered 0x%04x status %u", cmd, ackCmd, status);
+            return false;
+        }
+        return true;
+    }
+    ESP_LOGW(TAG, "Command 0x%04x: no answer (%d other bytes came in)", cmd, seen);
+    return false;                                                       // No answer: radar RX wire, or old firmware
+}
+
+static void ld2450PutI16(uint8_t *p, int16_t v) {
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)((uint16_t)v >> 8);
+}
+
+static int16_t ld2450GetI16(const uint8_t *p) {
+    return (int16_t)(p[0] | (p[1] << 8));
+}
+
+// Send targetMode and the zone from the config. The radar remembers both, so -1 keeps what was set last time.
+static void ld2450ApplySettings(void) {
+    const ld2450_config_t *c = &ld2450Cfg;
+    if (c->targetMode < 0 && c->zoneType < 0) return;                  // Nothing to change
+    const uint8_t enable[2] = {0x01, 0x00};
+    if (!ld2450Command(0x00FF, enable, 2, NULL, 0)) {
+        ESP_LOGW(TAG, "Radar did not answer the config command (radar RX wired to GPIO%d?)", c->txPin);
+        ld2450Command(0x00FE, NULL, 0, NULL, 0);                       // Make sure it isn't left in config mode
+        return;
+    }
+    if (c->targetMode >= 0) {
+        bool ok = ld2450Command(c->targetMode == 1 ? 0x0080 : 0x0090, NULL, 0, NULL, 0);
+        ESP_LOGI(TAG, "%s-target mode: %s", c->targetMode == 1 ? "Single" : "Multi", ok ? "set" : "FAILED");
+    }
+    if (c->zoneType >= 0) {
+        uint8_t v[26] = {0};                                            // Type, then 3 rectangles of x1 y1 x2 y2
+        ld2450PutI16(v, (int16_t)c->zoneType);
+        ld2450PutI16(v + 2, c->zoneX1Mm);
+        ld2450PutI16(v + 4, c->zoneY1Mm);
+        ld2450PutI16(v + 6, c->zoneX2Mm);
+        ld2450PutI16(v + 8, c->zoneY2Mm);                               // Rectangles 2 and 3 stay empty
+        bool ok = ld2450Command(0x00C2, v, sizeof(v), NULL, 0);
+        uint8_t back[26] = {0};
+        vTaskDelay(pdMS_TO_TICKS(100));                                 // It sometimes misses a command sent straight after
+        bool read = ld2450Command(0x00C1, NULL, 0, back, sizeof(back)); // Read it back to be sure
+        ESP_LOGI(TAG, "Zone %s: type %d, x %d..%d, y %d..%d mm. Radar now has type %d, x %d..%d, y %d..%d%s",
+                 ok ? "set" : "FAILED", c->zoneType, c->zoneX1Mm, c->zoneX2Mm, c->zoneY1Mm, c->zoneY2Mm,
+                 ld2450GetI16(back), ld2450GetI16(back + 2), ld2450GetI16(back + 6), ld2450GetI16(back + 4),
+                 ld2450GetI16(back + 8), read ? "" : " (read back FAILED)");
+    }
+    ld2450Command(0x00FE, NULL, 0, NULL, 0);                           // Back to reporting targets
 }
 
 esp_err_t ld2450Init(const ld2450_config_t *config) {
@@ -140,6 +242,7 @@ esp_err_t ld2450Init(const ld2450_config_t *config) {
         uart_driver_delete(config->uartNum);            // Roll back on failure
         return err;
     }
+    ld2450ApplySettings();                              // Before the reader task takes over the UART
     if (xTaskCreate(ld2450Task, "ld2450", LD2450_TASK_STACK, NULL, 5, NULL) != pdPASS) {
         uart_driver_delete(config->uartNum);
         return ESP_ERR_NO_MEM;
@@ -174,7 +277,7 @@ void ld2450GetStats(ld2450_stats_t *out) {
 }
 
 // Gaze source poll. Follows one person: who we follow keeps being followed until they are gone for
-// LD2450_LOCK_LOST_MS, so a second person nearer the radar doesn't make the eyes flick between them.
+// lockLostMs, so a second person nearer the radar doesn't make the eyes flick between them.
 // Only people who have moved recently count, and the eyes aim slightly ahead of them to hide the radar's delay.
 static bool ld2450Poll(uint32_t nowMs, gaze_target_t *out) {
     static int64_t seenStampUs;                         // Radar frame already used
@@ -182,6 +285,7 @@ static bool ld2450Poll(uint32_t nowMs, gaze_target_t *out) {
     static float lockX, lockY;                          // Their position, mm
     static float lockVx;                                // Their sideways speed, mm/s (smoothed)
     static int64_t lockSeenUs;                          // When they were last matched
+    static int64_t tracedStampUs;                       // Frame whose gaze was last traced
     (void)nowMs;                                        // Uses the radar's own frame times
     if (!ld2450Started || out == NULL) return false;
     ld2450_target_t t[LD2450_MAX_TARGETS];
@@ -200,7 +304,8 @@ static bool ld2450Poll(uint32_t nowMs, gaze_target_t *out) {
         int best = -1;                                  // Candidate to follow
         float bestScore = 1e9f;
         for (int i = 0; i < LD2450_MAX_TARGETS; i++) {
-            if (!t[i].valid || t[i].held || t[i].parked) continue;   // Not a person on the move
+            if (!t[i].valid) continue;                                          // Empty slot
+            if (t[i].held || t[i].parked) continue;                             // Lost track, or clutter (when those filters are on)
             float distMm = hypotf((float)t[i].xMm, (float)t[i].yMm);
             if (distMm > maxMm || distMm < minMm) continue;                  // Too far away, or too close to be a passer-by
             float score = locked ? hypotf(t[i].xMm - predX, t[i].yMm - lockY)   // Nearest to the followed person
@@ -214,27 +319,36 @@ static bool ld2450Poll(uint32_t nowMs, gaze_target_t *out) {
         if (best >= 0) {
             float dt = (stamp - seenStampUs) / 1e6f;
             if (locked && dt > 0.0f && dt < 0.5f) {
-                lockVx = 0.6f * lockVx + 0.4f * (t[best].xMm - lockX) / dt;   // Smoothed sideways speed
+                // Smooth out the radar's jitter (about 10 cm on someone standing still at 2 m)
+                float a = (ld2450Cfg.smoothMs > 0) ? 1.0f - expf(-dt * 1000.0f / ld2450Cfg.smoothMs) : 1.0f;
+                float newX = lockX + a * (t[best].xMm - lockX);
+                lockY += a * (t[best].yMm - lockY);
+                lockVx = 0.6f * lockVx + 0.4f * (newX - lockX) / dt;   // Smoothed sideways speed
+                lockX = newX;
             } else {
-                lockVx = 0.0f;                          // New person: no speed yet
+                lockVx = 0.0f;                          // New person: start where they are, no speed yet
+                lockX = t[best].xMm;
+                lockY = t[best].yMm;
             }
-            lockX = t[best].xMm;
-            lockY = t[best].yMm;
             lockSeenUs = stamp;
             locked = true;
-        } else if (locked && stamp - lockSeenUs > LD2450_LOCK_LOST_MS * 1000LL) {
+        } else if (locked && stamp - lockSeenUs > ld2450Cfg.lockLostMs * 1000LL) {
             locked = false;                             // Gone: next frame picks whoever is nearest
         }
         seenStampUs = stamp;
     }
-    if (!locked || stamp - lockSeenUs > LD2450_LOCK_LOST_MS * 1000LL) return false;
+    if (!locked || stamp - lockSeenUs > ld2450Cfg.lockLostMs * 1000LL) return false;
 
-    float aimX = lockX + lockVx * LD2450_LEAD_MS / 1000.0f;   // A little ahead of the person
-    float bearingDeg = atan2f(aimX, lockY) * 180.0f / LD2450_PI;   // 0 = straight ahead
+    float aimX = lockX + lockVx * ld2450Cfg.leadMs / 1000.0f;  // A little ahead of the person
+    float bearingDeg = atan2f(aimX, lockY) * 180.0f / LD2450_PI - ld2450Cfg.centerDeg;   // 0 = the eyes' straight ahead
     float gx = (ld2450Cfg.maxAngleDeg > 0.0f) ? bearingDeg / ld2450Cfg.maxAngleDeg : 0.0f;
     if (ld2450Cfg.mirrorX) gx = -gx;                    // Flip for mounting
     if (gx > 1.0f) gx = 1.0f;                           // Clamp to the gaze range
     if (gx < -1.0f) gx = -1.0f;
+    if (ld2450Cfg.trace && stamp == seenStampUs && stamp != tracedStampUs) {
+        printf("RG %lld %.3f\n", stamp / 1000, gx);    // Where this frame points the eyes, for the timing check
+        tracedStampUs = stamp;
+    }
     out->x = gx;
     out->y = 0.0f;                                      // Radar has no height info
     out->distanceM = hypotf(lockX, lockY) / 1000.0f;

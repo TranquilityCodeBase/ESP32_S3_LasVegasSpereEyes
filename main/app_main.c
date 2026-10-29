@@ -115,7 +115,7 @@ static void syncStep(void) {
 }
 
 #if APP_RADAR_ENABLED && APP_RADAR_LOG_MS > 0
-// Bring-up check: print what the radar sends. "bytes 0" = no signal on GPIO19 (wiring or power),
+// Bring-up check: print what the radar sends. "bytes 0" = no signal on GPIO20 (wiring or power),
 // bytes but no good frames = wrong baud rate or noise, good frames about 10 a second = radar works.
 static void radarLogTask(void *arg) {
     ld2450_stats_t last = {0};
@@ -129,7 +129,7 @@ static void radarLogTask(void *arg) {
         ESP_LOGI(TAG, "Radar: %lu bytes, %lu good, %lu bad frames in %d ms, %d target(s)",
                  (unsigned long)(now.bytes - last.bytes), (unsigned long)(now.goodFrames - last.goodFrames),
                  (unsigned long)(now.badFrames - last.badFrames), APP_RADAR_LOG_MS, count);
-        for (int i = 0; i < LD2450_MAX_TARGETS && ageMs < 500; i++) {   // Only fresh targets
+        for (int i = 0; i < LD2450_MAX_TARGETS && ageMs < 500 && !APP_RADAR_TRACE; i++) {   // Fresh targets (the trace has them all)
             if (!t[i].valid) continue;
             ESP_LOGI(TAG, "  target %d: x %d mm, y %d mm, speed %d cm/s%s", i + 1, t[i].xMm, t[i].yMm, t[i].speedCmS,
                      t[i].held ? " (held, ignored)" : (t[i].parked ? " (parked, ignored)" : ""));
@@ -184,8 +184,9 @@ static void renderTask(void *arg) {
     face_state_t face;
     while (true) {
         styleStep();                                                    // Time for the next design?
-        syncStep();
+        if (APP_SYNC_ROLE != EYE_SYNC_ROLE_LEADER) syncStep();          // Follower: take the master's blink before drawing
         eyeAnimatorUpdate(nowMs(), &face);                              // Where to look, how open
+        if (APP_SYNC_ROLE == EYE_SYNC_ROLE_LEADER) syncStep();          // Leader: send a new blink the same frame it's decided
         face.isLeftEye = APP_EYE_IS_LEFT;                               // Which eye of the pair this board draws
         eyeRendererDraw(&face);                                         // Draw and flip
 #if APP_DEBUG_FRAME_DUMP
@@ -241,8 +242,21 @@ void app_main(void) {
         .txPin = APP_RADAR_TX_PIN,
         .mirrorX = APP_RADAR_MIRROR_X,
         .maxAngleDeg = APP_RADAR_MAX_ANGLE,
+        .centerDeg = APP_RADAR_CENTER_DEG,
         .maxRangeM = APP_RADAR_MAX_RANGE_M,
         .minRangeM = APP_RADAR_MIN_RANGE_M,
+        .heldMs = APP_RADAR_HELD_MS,
+        .parkedMs = APP_RADAR_PARKED_MS,
+        .lockLostMs = APP_RADAR_LOCK_LOST_MS,
+        .leadMs = APP_RADAR_LEAD_MS,
+        .smoothMs = APP_RADAR_SMOOTH_MS,
+        .trace = APP_RADAR_TRACE,
+        .targetMode = APP_RADAR_TARGET_MODE,
+        .zoneType = APP_RADAR_ZONE_TYPE,
+        .zoneX1Mm = APP_RADAR_ZONE_X1_MM,
+        .zoneY1Mm = APP_RADAR_ZONE_Y1_MM,
+        .zoneX2Mm = APP_RADAR_ZONE_X2_MM,
+        .zoneY2Mm = APP_RADAR_ZONE_Y2_MM,
     };
     if (ld2450Init(&radarConfig) == ESP_OK) {
         if (APP_RADAR_GAZE) gazeSources[gazeSourceCount++] = &gazeSourceLd2450;
@@ -256,6 +270,7 @@ void app_main(void) {
     // Always last. Master: look around when nobody is there. Slave: hold center until the master says otherwise.
     gazeSources[gazeSourceCount++] = (APP_SYNC_ROLE == EYE_SYNC_ROLE_FOLLOWER) ? &gazeSourceCenter : &gazeSourceIdle;
     if (APP_SYNC_ROLE == EYE_SYNC_ROLE_FOLLOWER) eyeAnimatorSetAutoBlink(false);   // Slave blinks only on command
+    if (APP_SYNC_ROLE == EYE_SYNC_ROLE_LEADER) eyeAnimatorSetBlinkLead(APP_BLINK_SYNC_LEAD_MS);   // Wait for the slave to hear it
     eyeAnimatorInit(gazeSources, gazeSourceCount);
 
     xTaskCreatePinnedToCore(renderTask, "render", 6144, NULL, APP_RENDER_PRIORITY, NULL, APP_RENDER_CORE);

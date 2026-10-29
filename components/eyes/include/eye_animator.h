@@ -14,6 +14,7 @@ void eyeAnimatorInit(const gaze_source_t *const *sources, int count);  // Source
 void eyeAnimatorUpdate(uint32_t nowMs, face_state_t *out);             // Advance the animation to nowMs
 void eyeAnimatorStartBlink(int effectIndex);                           // Start a blink now (index into blinkEffectTable)
 void eyeAnimatorSetAutoBlink(bool enabled);                            // false = only blink when told (sync follower)
+void eyeAnimatorSetBlinkLead(uint32_t leadMs);                         // Sync leader: show each blink this long after announcing it
 uint32_t eyeAnimatorBlinkSeq(uint8_t *lastIndex);                      // Count of blinks started, and the last effect
 bool eyeAnimatorTracking(gaze_target_t *target);                       // true = a non-idle source is driving the gaze
 

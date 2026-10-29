@@ -20,8 +20,8 @@ typedef struct {
     int16_t yMm;        // Distance out from the radar in mm
     int16_t speedCmS;   // Speed in cm/s, negative = approaching
     uint16_t resMm;     // Distance resolution in mm
-    bool held;          // true = position frozen, the radar is holding a track it lost (gaze ignores these)
-    bool parked;        // true = hasn't gone anywhere for 8 s: clutter like a fan or wall echo (gaze ignores these)
+    bool held;          // true = position frozen for heldMs: the radar is repeating a track it lost
+    bool parked;        // true = moved under 30 cm in parkedMs: clutter like a fan or wall echo
 } ld2450_target_t;
 
 typedef struct {
@@ -30,8 +30,19 @@ typedef struct {
     int txPin;              // ESP TX -> radar RX
     bool mirrorX;           // true = flip lateral sign so +x is the viewer's right
     float maxAngleDeg;      // Angle that maps to gaze x = +-1
+    float centerDeg;        // Radar bearing (radar +x side positive) of the eyes' straight ahead, for a module mounted turned
     float maxRangeM;        // Ignore targets farther than this
     float minRangeM;        // Ignore targets nearer than this
+    uint32_t heldMs;        // Position frozen this long = lost track the radar is repeating, skip it (0 = off)
+    uint32_t parkedMs;      // Moved under 30 cm this long = clutter, skip it (0 = off)
+    uint32_t lockLostMs;    // Keep looking where the followed person was last seen this long
+    uint32_t leadMs;        // Aim this far ahead of the person's sideways motion (0 = off)
+    uint32_t smoothMs;      // Smooth the person's position over about this long (0 = off)
+    bool trace;             // Print every frame ("RT ms x,y,speed,res ...") for tools/radar_capture.py
+    // Settings kept in the radar, sent at start (it remembers them; -1 = leave as they are)
+    int targetMode;         // 1 = single target (steadier), 2 = multi target (up to 3, factory default)
+    int zoneType;           // 0 = no zone, 1 = only report people inside the rectangle, 2 = ignore people inside it
+    int16_t zoneX1Mm, zoneY1Mm, zoneX2Mm, zoneY2Mm;   // Rectangle corners in radar coordinates
 } ld2450_config_t;
 
 // Counters for checking the wiring: bytes > 0 means the radar's TX reaches us, goodFrames > 0 means the baud rate is right
