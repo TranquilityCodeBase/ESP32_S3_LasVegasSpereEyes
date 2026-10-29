@@ -152,9 +152,11 @@ static bool ld2450Command(uint16_t cmd, const uint8_t *value, int valueLen, uint
     // Hunt for the answer header among the data frames still streaming in
     int64_t deadline = esp_timer_get_time() + 500000;
     int matched = 0;
+    int seen = 0;                                                       // Bytes received while waiting, for the log
     uint8_t b;
     while (esp_timer_get_time() < deadline) {
         if (uart_read_bytes(ld2450Cfg.uartNum, &b, 1, pdMS_TO_TICKS(20)) != 1) continue;
+        seen++;
         matched = (b == head[matched]) ? matched + 1 : (b == head[0] ? 1 : 0);
         if (matched < 4) continue;
         uint8_t hdr[6];                                                 // Length, command | 0x0100, status
@@ -167,8 +169,13 @@ static bool ld2450Command(uint16_t cmd, const uint8_t *value, int valueLen, uint
         if (restLen < 0 || restLen > (int)sizeof(rest)) return false;
         if (restLen > 0 && uart_read_bytes(ld2450Cfg.uartNum, rest, restLen, pdMS_TO_TICKS(50)) != restLen) return false;
         if (reply != NULL) memcpy(reply, rest, restLen < replyMax ? restLen : replyMax);
-        return ackCmd == (cmd | 0x0100) && status == 0;
+        if (ackCmd != (cmd | 0x0100) || status != 0) {
+            ESP_LOGW(TAG, "Command 0x%04x answered 0x%04x status %u", cmd, ackCmd, status);
+            return false;
+        }
+        return true;
     }
+    ESP_LOGW(TAG, "Command 0x%04x: no answer (%d other bytes came in)", cmd, seen);
     return false;                                                       // No answer: radar RX wire, or old firmware
 }
 
@@ -188,6 +195,7 @@ static void ld2450ApplySettings(void) {
     const uint8_t enable[2] = {0x01, 0x00};
     if (!ld2450Command(0x00FF, enable, 2, NULL, 0)) {
         ESP_LOGW(TAG, "Radar did not answer the config command (radar RX wired to GPIO%d?)", c->txPin);
+        ld2450Command(0x00FE, NULL, 0, NULL, 0);                       // Make sure it isn't left in config mode
         return;
     }
     if (c->targetMode >= 0) {
@@ -310,12 +318,17 @@ static bool ld2450Poll(uint32_t nowMs, gaze_target_t *out) {
         if (best >= 0) {
             float dt = (stamp - seenStampUs) / 1e6f;
             if (locked && dt > 0.0f && dt < 0.5f) {
-                lockVx = 0.6f * lockVx + 0.4f * (t[best].xMm - lockX) / dt;   // Smoothed sideways speed
+                // Smooth out the radar's jitter (about 10 cm on someone standing still at 2 m)
+                float a = (ld2450Cfg.smoothMs > 0) ? 1.0f - expf(-dt * 1000.0f / ld2450Cfg.smoothMs) : 1.0f;
+                float newX = lockX + a * (t[best].xMm - lockX);
+                lockY += a * (t[best].yMm - lockY);
+                lockVx = 0.6f * lockVx + 0.4f * (newX - lockX) / dt;   // Smoothed sideways speed
+                lockX = newX;
             } else {
-                lockVx = 0.0f;                          // New person: no speed yet
+                lockVx = 0.0f;                          // New person: start where they are, no speed yet
+                lockX = t[best].xMm;
+                lockY = t[best].yMm;
             }
-            lockX = t[best].xMm;
-            lockY = t[best].yMm;
             lockSeenUs = stamp;
             locked = true;
         } else if (locked && stamp - lockSeenUs > ld2450Cfg.lockLostMs * 1000LL) {

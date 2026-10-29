@@ -62,13 +62,15 @@
 // The settings below were tuned 2026-10-25 with the module lying flat, which cut its view to one side.
 // Re-check them with the module upright: tools/radar_capture.py records walks and prints a summary.
 #define APP_RADAR_MIRROR_X      true        // Radar +x is the viewer's left (checked flat 2026-10-25: re-check upright)
-#define APP_RADAR_MAX_ANGLE     30.0f       // Bearing (degrees) that maps to the edge of the gaze range (smaller = eyes move more)
+#define APP_RADAR_MAX_ANGLE     45.0f       // Bearing (degrees) that maps to the edge of the gaze range (smaller = eyes move more).
+                                            // Upright, it tracked to about 45 degrees each side at 2 m (2026-10-29).
 #define APP_RADAR_MAX_RANGE_M   6.0f        // Ignore people farther than this (the radar's own limit is 6 m)
 #define APP_RADAR_MIN_RANGE_M   0.0f        // Ignore anything nearer than this (was 0.5 for a clip in front of the flat module)
 #define APP_RADAR_HELD_MS       1500        // Skip a position frozen this long, the radar repeating someone it lost (0 = off)
 #define APP_RADAR_PARKED_MS     0           // Skip targets that moved under 30 cm in this long, clutter (0 = off; was 8000)
-#define APP_RADAR_LOCK_LOST_MS  1000        // Keep looking where the person was last seen this long
+#define APP_RADAR_LOCK_LOST_MS  1500        // Keep looking where the person was last seen this long (bridges short dropouts at the edges)
 #define APP_RADAR_LEAD_MS       0           // Aim this far ahead of the person (0 = off; was 150, re-tune after the timing test)
+#define APP_RADAR_SMOOTH_MS     150         // Smooth the radar's jitter (about 10 cm when still at 2 m) over this long (0 = off)
 #define APP_RADAR_TRACE         1           // 1 = print every radar frame for tools/radar_capture.py (test sessions)
 // Settings kept in the radar itself (-1 = leave as they are). The radar has no range or sensitivity setting;
 // these two are what it offers. Zone corners are radar coordinates in mm (x sideways, y straight out).
@@ -86,6 +88,6 @@
 #endif
 #define APP_SYNC_CHANNEL        1           // Same Wi-Fi channel on both boards
 #define APP_SYNC_GROUP_ID       0x51        // Same on both boards; change it if two pairs share a room
-#define APP_BLINK_SYNC_LEAD_MS  20          // Master shows each blink this long after sending it, so the slave
+#define APP_BLINK_SYNC_LEAD_MS  10          // Master shows each blink this long after sending it, so the slave
                                             // (which starts on its next frame, 0 to 33 ms later) blinks with it.
                                             // Tune from the "Blink start" log times on both boards.

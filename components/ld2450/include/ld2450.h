@@ -36,6 +36,7 @@ typedef struct {
     uint32_t parkedMs;      // Moved under 30 cm this long = clutter, skip it (0 = off)
     uint32_t lockLostMs;    // Keep looking where the followed person was last seen this long
     uint32_t leadMs;        // Aim this far ahead of the person's sideways motion (0 = off)
+    uint32_t smoothMs;      // Smooth the person's position over about this long (0 = off)
     bool trace;             // Print every frame ("RT ms x,y,speed,res ...") for tools/radar_capture.py
     // Settings kept in the radar, sent at start (it remembers them; -1 = leave as they are)
     int targetMode;         // 1 = single target (steadier), 2 = multi target (up to 3, factory default)

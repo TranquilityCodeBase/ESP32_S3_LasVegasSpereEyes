@@ -248,6 +248,7 @@ void app_main(void) {
         .parkedMs = APP_RADAR_PARKED_MS,
         .lockLostMs = APP_RADAR_LOCK_LOST_MS,
         .leadMs = APP_RADAR_LEAD_MS,
+        .smoothMs = APP_RADAR_SMOOTH_MS,
         .trace = APP_RADAR_TRACE,
         .targetMode = APP_RADAR_TARGET_MODE,
         .zoneType = APP_RADAR_ZONE_TYPE,
