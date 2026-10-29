@@ -72,7 +72,7 @@
 #define APP_RADAR_TRACE         1           // 1 = print every radar frame for tools/radar_capture.py (test sessions)
 // Settings kept in the radar itself (-1 = leave as they are). The radar has no range or sensitivity setting;
 // these two are what it offers. Zone corners are radar coordinates in mm (x sideways, y straight out).
-#define APP_RADAR_TARGET_MODE   -1          // 1 = single target (steadier on one person), 2 = multi (up to 3)
+#define APP_RADAR_TARGET_MODE   1           // 1 = single target (steadier on one person), 2 = multi (up to 3)
 #define APP_RADAR_ZONE_TYPE     1           // 0 = off, 1 = only people inside the zone, 2 = ignore people inside it
 #define APP_RADAR_ZONE_X1_MM    -3000       // Sidewalk zone: 3 m to each side ...
 #define APP_RADAR_ZONE_Y1_MM    0           // ... from the radar ...
