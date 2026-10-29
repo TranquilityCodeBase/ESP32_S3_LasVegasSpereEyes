@@ -46,7 +46,7 @@
 
 // ---------- Design rotation ----------
 // The master steps through the designs listed in stylePlaylist (app_main.c) and tells the slave which one to show.
-#define APP_STYLE_SECONDS       15          // Time on each design (0 = stay on the first one)
+#define APP_STYLE_SECONDS       5           // Time on each design (0 = stay on the first one)
 
 // ---------- LD2450 radar (master board only) ----------
 // Wire radar RX -> GPIO19 (D-) and radar TX -> GPIO20 (D+) on the 12-pin header, 5 V from USB_5V on the same header.
