@@ -249,6 +249,12 @@ void app_main(void) {
         .lockLostMs = APP_RADAR_LOCK_LOST_MS,
         .leadMs = APP_RADAR_LEAD_MS,
         .trace = APP_RADAR_TRACE,
+        .targetMode = APP_RADAR_TARGET_MODE,
+        .zoneType = APP_RADAR_ZONE_TYPE,
+        .zoneX1Mm = APP_RADAR_ZONE_X1_MM,
+        .zoneY1Mm = APP_RADAR_ZONE_Y1_MM,
+        .zoneX2Mm = APP_RADAR_ZONE_X2_MM,
+        .zoneY2Mm = APP_RADAR_ZONE_Y2_MM,
     };
     if (ld2450Init(&radarConfig) == ESP_OK) {
         if (APP_RADAR_GAZE) gazeSources[gazeSourceCount++] = &gazeSourceLd2450;

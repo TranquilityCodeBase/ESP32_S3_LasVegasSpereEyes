@@ -86,6 +86,10 @@ How the eyes pick who to follow (`components/ld2450/ld2450.c`, all set in `main/
 - Optionally aim `APP_RADAR_LEAD_MS` ahead of their sideways motion to hide the radar's delay.
 - Full eye swing at `APP_RADAR_MAX_ANGLE` degrees off center; `APP_RADAR_MIRROR_X` sets which side is which.
 
+The radar itself has no range or sensitivity setting. It offers two, sent at start and remembered by the radar:
+single or multi-target mode (`APP_RADAR_TARGET_MODE`) and a zone filter (`APP_RADAR_ZONE_*`, one rectangle in
+radar coordinates, e.g. the sidewalk). Both default to -1 (leave as they are); the log confirms each one.
+
 ### Re-test with the module upright (to do)
 
 The 2026-10-25 settings were workarounds for the flat module. For the re-test, parked filter, lead and minimum

@@ -124,6 +124,94 @@ static void ld2450Task(void *arg) {
     }
 }
 
+// ---------- Radar settings over the serial link (Hi-Link LD2450 serial command protocol) ----------
+// Command frame: FD FC FB FA, length (2 bytes, of command + value), command (2), value, 04 03 02 01.
+// The radar answers with the same header, command | 0x0100, and a status word (0 = done).
+
+// Send one command and wait for its answer. reply gets the answer's value bytes after the status word.
+static bool ld2450Command(uint16_t cmd, const uint8_t *value, int valueLen, uint8_t *reply, int replyMax) {
+    static const uint8_t head[4] = {0xFD, 0xFC, 0xFB, 0xFA};
+    static const uint8_t tail[4] = {0x04, 0x03, 0x02, 0x01};
+    uint8_t out[48];
+    int n = 0;
+    memcpy(out, head, 4);
+    n = 4;
+    out[n++] = (uint8_t)(2 + valueLen);                                 // Length of command + value
+    out[n++] = 0;
+    out[n++] = (uint8_t)cmd;
+    out[n++] = (uint8_t)(cmd >> 8);
+    if (valueLen > 0) {
+        memcpy(out + n, value, valueLen);
+        n += valueLen;
+    }
+    memcpy(out + n, tail, 4);
+    n += 4;
+    uart_flush_input(ld2450Cfg.uartNum);
+    uart_write_bytes(ld2450Cfg.uartNum, out, n);
+
+    // Hunt for the answer header among the data frames still streaming in
+    int64_t deadline = esp_timer_get_time() + 500000;
+    int matched = 0;
+    uint8_t b;
+    while (esp_timer_get_time() < deadline) {
+        if (uart_read_bytes(ld2450Cfg.uartNum, &b, 1, pdMS_TO_TICKS(20)) != 1) continue;
+        matched = (b == head[matched]) ? matched + 1 : (b == head[0] ? 1 : 0);
+        if (matched < 4) continue;
+        uint8_t hdr[6];                                                 // Length, command | 0x0100, status
+        if (uart_read_bytes(ld2450Cfg.uartNum, hdr, 6, pdMS_TO_TICKS(50)) != 6) return false;
+        int len = hdr[0] | (hdr[1] << 8);
+        uint16_t ackCmd = (uint16_t)(hdr[2] | (hdr[3] << 8));
+        uint16_t status = (uint16_t)(hdr[4] | (hdr[5] << 8));
+        uint8_t rest[40];
+        int restLen = len - 4;                                          // Value bytes after the status word
+        if (restLen < 0 || restLen > (int)sizeof(rest)) return false;
+        if (restLen > 0 && uart_read_bytes(ld2450Cfg.uartNum, rest, restLen, pdMS_TO_TICKS(50)) != restLen) return false;
+        if (reply != NULL) memcpy(reply, rest, restLen < replyMax ? restLen : replyMax);
+        return ackCmd == (cmd | 0x0100) && status == 0;
+    }
+    return false;                                                       // No answer: radar RX wire, or old firmware
+}
+
+static void ld2450PutI16(uint8_t *p, int16_t v) {
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)((uint16_t)v >> 8);
+}
+
+static int16_t ld2450GetI16(const uint8_t *p) {
+    return (int16_t)(p[0] | (p[1] << 8));
+}
+
+// Send targetMode and the zone from the config. The radar remembers both, so -1 keeps what was set last time.
+static void ld2450ApplySettings(void) {
+    const ld2450_config_t *c = &ld2450Cfg;
+    if (c->targetMode < 0 && c->zoneType < 0) return;                  // Nothing to change
+    const uint8_t enable[2] = {0x01, 0x00};
+    if (!ld2450Command(0x00FF, enable, 2, NULL, 0)) {
+        ESP_LOGW(TAG, "Radar did not answer the config command (radar RX wired to GPIO%d?)", c->txPin);
+        return;
+    }
+    if (c->targetMode >= 0) {
+        bool ok = ld2450Command(c->targetMode == 1 ? 0x0080 : 0x0090, NULL, 0, NULL, 0);
+        ESP_LOGI(TAG, "%s-target mode: %s", c->targetMode == 1 ? "Single" : "Multi", ok ? "set" : "FAILED");
+    }
+    if (c->zoneType >= 0) {
+        uint8_t v[26] = {0};                                            // Type, then 3 rectangles of x1 y1 x2 y2
+        ld2450PutI16(v, (int16_t)c->zoneType);
+        ld2450PutI16(v + 2, c->zoneX1Mm);
+        ld2450PutI16(v + 4, c->zoneY1Mm);
+        ld2450PutI16(v + 6, c->zoneX2Mm);
+        ld2450PutI16(v + 8, c->zoneY2Mm);                               // Rectangles 2 and 3 stay empty
+        bool ok = ld2450Command(0x00C2, v, sizeof(v), NULL, 0);
+        uint8_t back[26] = {0};
+        bool read = ld2450Command(0x00C1, NULL, 0, back, sizeof(back)); // Read it back to be sure
+        ESP_LOGI(TAG, "Zone %s: type %d, x %d..%d, y %d..%d mm. Radar now has type %d, x %d..%d, y %d..%d%s",
+                 ok ? "set" : "FAILED", c->zoneType, c->zoneX1Mm, c->zoneX2Mm, c->zoneY1Mm, c->zoneY2Mm,
+                 ld2450GetI16(back), ld2450GetI16(back + 2), ld2450GetI16(back + 6), ld2450GetI16(back + 4),
+                 ld2450GetI16(back + 8), read ? "" : " (read back FAILED)");
+    }
+    ld2450Command(0x00FE, NULL, 0, NULL, 0);                           // Back to reporting targets
+}
+
 esp_err_t ld2450Init(const ld2450_config_t *config) {
     if (config == NULL) return ESP_ERR_INVALID_ARG;     // Config is required
     if (ld2450Started) return ESP_ERR_INVALID_STATE;    // Only once
@@ -145,6 +233,7 @@ esp_err_t ld2450Init(const ld2450_config_t *config) {
         uart_driver_delete(config->uartNum);            // Roll back on failure
         return err;
     }
+    ld2450ApplySettings();                              // Before the reader task takes over the UART
     if (xTaskCreate(ld2450Task, "ld2450", LD2450_TASK_STACK, NULL, 5, NULL) != pdPASS) {
         uart_driver_delete(config->uartNum);
         return ESP_ERR_NO_MEM;

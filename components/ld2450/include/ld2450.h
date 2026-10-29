@@ -37,6 +37,10 @@ typedef struct {
     uint32_t lockLostMs;    // Keep looking where the followed person was last seen this long
     uint32_t leadMs;        // Aim this far ahead of the person's sideways motion (0 = off)
     bool trace;             // Print every frame ("RT ms x,y,speed,res ...") for tools/radar_capture.py
+    // Settings kept in the radar, sent at start (it remembers them; -1 = leave as they are)
+    int targetMode;         // 1 = single target (steadier), 2 = multi target (up to 3, factory default)
+    int zoneType;           // 0 = no zone, 1 = only report people inside the rectangle, 2 = ignore people inside it
+    int16_t zoneX1Mm, zoneY1Mm, zoneX2Mm, zoneY2Mm;   // Rectangle corners in radar coordinates
 } ld2450_config_t;
 
 // Counters for checking the wiring: bytes > 0 means the radar's TX reaches us, goodFrames > 0 means the baud rate is right
