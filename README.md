@@ -97,13 +97,13 @@ The sensor in the pumpkin is glued turned about 5 degrees toward the viewer's le
 re-glued: stand still dead ahead of the eyes at 2 m, run `py tools/radar_capture.py --seconds 20`, and set
 `APP_RADAR_CENTER_DEG` to the bearing it prints (keep its sign, with `APP_RADAR_MIRROR_X` true).
 
-### Re-test with the module upright (to do)
+### Tuning (2026-10-29, upright in the pumpkin, walking at 2 m)
 
-The 2026-10-25 settings were workarounds for the flat module. For the re-test, parked filter, lead and minimum
-range are off. Steps: walk straight across at 2 m and at 3 to 4 m, both ways, with `tools/radar_capture.py`
-running; confirm left/right (`APP_RADAR_MIRROR_X`) and that both sides reach about 45 degrees; stand still to
-measure jitter; then set `APP_RADAR_MAX_ANGLE`, decide which filters are still needed, and set the lead.
-Finally `APP_RADAR_TRACE 0` for normal use.
+Single-target mode reports about 19 times a second while someone is in view. Tracks to about 45 degrees each
+side, with short dropouts beyond that, so `APP_RADAR_MAX_ANGLE` is 45 and `APP_RADAR_LOCK_LOST_MS` 1.5 s bridges
+them. A still person jitters about 8 to 10 cm at 2 m, smoothed by `APP_RADAR_SMOOTH_MS` 150. In single mode
+the radar repeats a still person's exact position for about 1.5 s, so the held filter is 3 s. Parked filter,
+lead and minimum range are off. Blinks: both eyes start within one 33 ms frame (`APP_BLINK_SYNC_LEAD_MS`).
 
 ## Two boards (ESP-NOW)
 

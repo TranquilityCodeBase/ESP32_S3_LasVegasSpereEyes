@@ -76,7 +76,7 @@
 #define APP_RADAR_LOCK_LOST_MS  1500        // Keep looking where the person was last seen this long (bridges short dropouts at the edges)
 #define APP_RADAR_LEAD_MS       0           // Aim this far ahead of the person (0 = off; was 150, re-tune after the timing test)
 #define APP_RADAR_SMOOTH_MS     150         // Smooth the radar's jitter (about 10 cm when still at 2 m) over this long (0 = off)
-#define APP_RADAR_TRACE         1           // 1 = print every radar frame for tools/radar_capture.py (test sessions)
+#define APP_RADAR_TRACE         0           // 1 = print every radar frame for tools/radar_capture.py (test sessions)
 // Settings kept in the radar itself (-1 = leave as they are). The radar has no range or sensitivity setting;
 // these two are what it offers. Zone corners are radar coordinates in mm (x sideways, y straight out).
 #define APP_RADAR_TARGET_MODE   1           // 1 = single target (steadier on one person), 2 = multi (up to 3)

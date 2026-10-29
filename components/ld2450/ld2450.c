@@ -211,6 +211,7 @@ static void ld2450ApplySettings(void) {
         ld2450PutI16(v + 8, c->zoneY2Mm);                               // Rectangles 2 and 3 stay empty
         bool ok = ld2450Command(0x00C2, v, sizeof(v), NULL, 0);
         uint8_t back[26] = {0};
+        vTaskDelay(pdMS_TO_TICKS(100));                                 // It sometimes misses a command sent straight after
         bool read = ld2450Command(0x00C1, NULL, 0, back, sizeof(back)); // Read it back to be sure
         ESP_LOGI(TAG, "Zone %s: type %d, x %d..%d, y %d..%d mm. Radar now has type %d, x %d..%d, y %d..%d%s",
                  ok ? "set" : "FAILED", c->zoneType, c->zoneX1Mm, c->zoneX2Mm, c->zoneY1Mm, c->zoneY2Mm,
